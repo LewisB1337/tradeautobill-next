@@ -47,17 +47,24 @@ export async function POST(req: Request) {
   }
 
   // 4) Forward to n8n with HMAC
-  const forward = { userId: user.id, tier, invoice: body }
-  const sig = sign(forward)
+    const forward = { userId: user.id, tier, invoice: body };
+  const sig = sign(forward);
+
+  // ─────── Debug logging ───────
+  console.log('⟵⟵⟵ SIGNATURE DEBUG ⟵⟵⟵');
+  console.log('Payload JSON:', JSON.stringify(forward));
+  console.log('Computed HMAC:', sig);
+  // ─────────────────────────────
 
   const res = await fetch(process.env.N8N_WEBHOOK_URL!, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-hmac-signature': sig
+      'x-hmac-signature': sig,
     },
     body: JSON.stringify(forward),
-  })
+  });
+
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')
