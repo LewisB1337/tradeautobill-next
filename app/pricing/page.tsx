@@ -1,30 +1,105 @@
-'use client';
-export default function Page(){
-  async function upgrade(){
-    const s = await fetch('/api/session');
-    if(s.status===401) return location.href='/login';
-    location.href='/account';
-  }
+// app/pricing/page.tsx
+'use client'
+
+import Link from 'next/link'
+
+const LIMITS = {
+  free:     { daily: 3,  monthly: 10 },
+  standard: { daily: 50, monthly: 200 },
+  pro:      { daily: null, monthly: null },
+}
+
+export default function PricingPage() {
   return (
-    <section className="container py-10">
-      <h1>Simple pricing</h1>
-      <div className="grid-2" style={{gridTemplateColumns:'1fr 1fr 1fr'}}>
-        <article className="card">
-          <h2>Free</h2><p className="muted">£0</p>
-          <ul><li>3 invoices/day, 10/month</li><li>PDF email delivery</li><li>Watermark</li><li>7-day storage</li></ul>
-          <a href="/login" className="btn btn-secondary">Start free</a>
-        </article>
-        <article className="card" style={{borderColor:'#cfe3ff'}}>
-          <h2>Standard</h2><p className="muted">£9/mo</p>
-          <ul><li>50 invoices/month</li><li>No watermark, your logo</li><li>Saved business & clients</li><li>6-month storage</li></ul>
-          <button className="btn btn-primary" onClick={upgrade}>Upgrade</button>
-        </article>
-        <article className="card">
-          <h2>Pro</h2><p className="muted">£29/mo</p>
-          <ul><li>Up to 500 invoices/month</li><li>Hosted links & webhooks</li><li>Custom footer/colours</li><li>12-month storage</li></ul>
-          <button className="btn btn-secondary" onClick={upgrade}>Go Pro</button>
-        </article>
+    <section className="container py-16">
+      <h1 style={{ textAlign: 'center', marginBottom: '2rem' }}>Pricing</h1>
+
+      {/* Flex row on desktop, simple column stack on small screens */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '1.5rem',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+        }}
+      >
+        <PlanCard
+          title="Free"
+          price="£0"
+          limits={LIMITS.free}
+          ctaText="Start free"
+          ctaHref="/create"
+        />
+        <PlanCard
+          title="Standard"
+          price="£12&nbsp;/&nbsp;month"
+          limits={LIMITS.standard}
+          bullet="No watermark  •  Hosted PDF"
+          ctaText="Upgrade"
+          ctaHref="/api/stripe/checkout?plan=standard"
+          featured
+        />
+        <PlanCard
+          title="Pro"
+          price="£29&nbsp;/&nbsp;month"
+          limits={LIMITS.pro}
+          bullet="Priority support  •  Unlimited invoices"
+          ctaText="Upgrade"
+          ctaHref="/api/stripe/checkout?plan=pro"
+        />
       </div>
     </section>
-  );
+  )
+}
+
+/* ------------------------------------------------------------- */
+
+interface CardProps {
+  title: string
+  price: string
+  limits: { daily: number | null; monthly: number | null }
+  bullet?: string
+  ctaText: string
+  ctaHref: string
+  featured?: boolean
+}
+
+function PlanCard({ title, price, limits, bullet, ctaText, ctaHref, featured }: CardProps) {
+  const daily = limits.daily ? `${limits.daily}/day` : 'Unlimited'
+  const monthly = limits.monthly ? `${limits.monthly}/month` : 'Unlimited'
+
+  return (
+    <article
+      className="card"
+      style={{
+        flex: '1 1 320px',              // keep all three on one row ≥ 1024px
+        maxWidth: 360,
+        border: featured ? '2px solid royalblue' : '1px solid #e5e7eb',
+        transform: featured ? 'scale(1.03)' : undefined,
+        padding: '1.5rem',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+      }}
+    >
+      <h2 style={{ marginTop: 0 }}>{title}</h2>
+      <p
+        style={{ fontSize: '1.5rem', margin: '0.25rem 0 1rem' }}
+        dangerouslySetInnerHTML={{ __html: price }}
+      />
+      <ul style={{ listStyle: 'none', padding: 0, lineHeight: '1.6', marginBottom: '1rem' }}>
+        <li>{daily} invoices&nbsp;/&nbsp;day</li>
+        <li>{monthly} invoices&nbsp;/&nbsp;month</li>
+        {bullet && <li>{bullet}</li>}
+      </ul>
+      <Link
+        href={ctaHref}
+        className="btn btn-primary"
+        style={{ marginTop: 'auto', width: '100%' }}
+      >
+        {ctaText}
+      </Link>
+    </article>
+  )
 }
