@@ -1,58 +1,32 @@
+// app/confirm/page.tsx
 'use client'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabaseBrowser } from '@/lib/supabaseBrowser'
+import { useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useSupabaseClient } from '@supabase/auth-helpers-react'
 
 export default function ConfirmPage() {
   const router = useRouter()
+  const params = useSearchParams()
+  const supabase = useSupabaseClient()
+  const [status, setStatus] = useState<'working' | 'error'>('working')
 
   useEffect(() => {
-    async function run() {
-      const hash = typeof window !== 'undefined' ? window.location.hash.slice(1) : ''
-      const query = typeof window !== 'undefined' ? window.location.search : ''
-      console.log('[confirm] hash=', hash, 'query=', query)
-
-      // 1) PKCE code flow
-      const sp = new URLSearchParams(query)
-      const code = sp.get('code')
-      if (code) {
-        console.log('[confirm] exchanging code for session')
-        const { error } = await supabaseBrowser.auth.exchangeCodeForSession(code)
-        if (!error) {
-          console.log('[confirm] code exchange ok, redirecting')
-          return router.replace('/create')
-        }
+    async function finishSignIn() {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(params)
+      if (error) {
         console.error('[confirm] exchange error:', error)
-        return router.replace('/login?error=' + encodeURIComponent(error.message))
+        setStatus('error')
+      } else {
+        // ✅ cookies are now set, redirect
+        router.replace('/create')
       }
-
-      // 2) Fallback: implicit/hash
-      const h = new URLSearchParams(hash)
-      const access_token = h.get('access_token')
-      const refresh_token = h.get('refresh_token')
-      if (access_token && refresh_token) {
-        console.log('[confirm] setting session from hash')
-        const { error } = await supabaseBrowser.auth.setSession({ access_token, refresh_token })
-        if (!error) return router.replace('/create')
-        return router.replace('/login?error=' + encodeURIComponent(error.message))
-      }
-
-      const err = h.get('error_description') || h.get('error')
-      if (err) {
-        console.error('[confirm] supabase error in hash:', err)
-        return router.replace('/login?error=' + encodeURIComponent(err))
-      }
-
-      router.replace('/login?error=invalid_or_expired')
     }
-    run()
-  }, [router])
+    finishSignIn()
+  }, [supabase, router, params])
 
-  return (
-    <section className="container py-10">
-      <h1>Signing you in…</h1>
-      <p>Completing authentication…</p>
-    </section>
-  )
+  if (status === 'error') {
+    return <p style={{ color: 'red' }}>Sign-in failed. Try the link again.</p>
+  }
+  return <p>Signing you in…</p>
 }
