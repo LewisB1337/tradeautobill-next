@@ -1,45 +1,83 @@
-'use client';
-import { useEffect, useState } from 'react';
+'use client'
 
-export default function Page({ params }:{ params:{ jobId:string } }){
-  const { jobId } = params;
-  const [state, setState] = useState('queued');
-  const [pdfUrl, setPdfUrl] = useState<string|undefined>();
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
 
-  useEffect(()=>{
-    let timer: any;
-    async function poll(){
-      const r = await fetch('/api/status/'+jobId);
-      if(r.ok){
-        const data = await r.json();
-        setState(data.status);
-        if(data.pdfUrl) setPdfUrl(data.pdfUrl);
-        if(data.status!=='sent' && data.status!=='failed'){
-          timer = setTimeout(poll, 3000);
+type JobState = 'queued' | 'working' | 'sent' | 'failed'
+
+export default function StatusPage({ params }: { params: { jobId: string } }) {
+  const { jobId } = params
+  const [state, setState] = useState<JobState>('queued')
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    async function poll() {
+      try {
+        const r = await fetch(`/api/status/${jobId}`)
+        if (!r.ok) throw new Error(`status API ${r.status}`)
+        const data = await r.json()
+
+        // data.status should be 'queued' | 'working' | 'sent' | 'failed'
+        setState(data.status as JobState)
+        if (data.pdfUrl) setPdfUrl(data.pdfUrl)
+
+        if (data.status !== 'sent' && data.status !== 'failed') {
+          timer = setTimeout(poll, 3000) // poll again in 3 s
         }
+      } catch (err) {
+        console.error('poll error', err)
+        setState('failed')
       }
     }
-    poll();
-    return ()=> clearTimeout(timer);
-  }, [jobId]);
+
+    poll()
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
+  }, [jobId])
 
   return (
-    <section className="container py-12">
-      <h1>Invoice on its way</h1>
-      <p className="muted">We’ll email your customer as soon as the PDF is ready.</p>
-      <div className="card">
-        <div>Status: <span>{state}</span></div>
-        {pdfUrl && <div>PDF: <a href={pdfUrl} target="_blank" rel="noopener">Download</a></div>}
-      </div>
-      <div className="row" style={{marginTop:12}}>
-        <a href="/create" className="btn btn-secondary">Create another</a>
-        <button className="btn btn-primary" onClick={async ()=>{ await fetch('/api/invoices/'+jobId+'/resend',{method:'POST'}); alert('Resent (if possible).'); }}>Resend email</button>
-      </div>
-      <div className="card" style={{marginTop:16}}>
-        <strong>Want hosted links & history?</strong>
-        <p className="muted">Upgrade to Pro for hosted invoice links and 12-month storage.</p>
-        <a href="/pricing" className="btn btn-secondary">See plans</a>
-      </div>
+    <section className="container py-16">
+      <h1>Invoice status</h1>
+
+      {state === 'queued' && <p>🕓 Queued…</p>}
+      {state === 'working' && <p>⏳ Generating PDF & sending email…</p>}
+
+      {state === 'sent' && (
+        <>
+          <p style={{ color: 'green' }}>✅ Email sent!</p>
+          {pdfUrl && (
+            <p>
+              <a
+                href={pdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary"
+              >
+                Download PDF
+              </a>
+            </p>
+          )}
+          <p>
+            <Link href="/create" className="btn">
+              Create another invoice
+            </Link>
+          </p>
+        </>
+      )}
+
+      {state === 'failed' && (
+        <>
+          <p style={{ color: 'red' }}>❌ Something went wrong. Please try again later.</p>
+          <p>
+            <Link href="/create" className="btn">
+              Back to create
+            </Link>
+          </p>
+        </>
+      )}
     </section>
-  );
+  )
 }

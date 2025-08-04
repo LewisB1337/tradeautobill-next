@@ -5,7 +5,6 @@ import UsageMeter from '../components/UsageMeter'
 import { useEffect, useRef, useState } from 'react'
 
 type Item = { description: string; qty: number; unitPrice: number; vatRate: number }
-
 type InvoicePayload = Record<string, any> & {
   items: Item[]
 }
@@ -71,12 +70,19 @@ export default function Page() {
         body: JSON.stringify(payload),
       })
 
+      // Handle tier-limit response
+      if (r.status === 429) {
+        const { error } = await r.json()
+        setSubmitError(error)   // e.g. "Daily free limit reached"
+        return
+      }
+
       const text = await r.text()
       let json: any = {}
       try {
         json = text ? JSON.parse(text) : {}
-      } catch (parseErr) {
-        console.warn('Failed to parse /api/invoice response as JSON:', parseErr, 'raw:', text)
+      } catch {
+        console.warn('Failed to parse /api/invoice response as JSON:', text)
       }
 
       if (!r.ok) {
@@ -99,7 +105,6 @@ export default function Page() {
 
       setJobId(returnedJobId)
       setInvoiceSent(true)
-
       window.history.replaceState({}, '', `/status/${encodeURIComponent(returnedJobId)}`)
     } catch (err: any) {
       console.error('Invoice submit error', err)
@@ -114,12 +119,14 @@ export default function Page() {
       <header className="row">
         <h1 style={{ margin: 0 }}>Create invoice</h1>
         <span className="pill" id="tier">
-          Free
+          {/* Optionally display dynamic tier here */}
         </span>
       </header>
+
       <UsageMeter daily={daily} monthly={monthly} />
 
       <form ref={formRef} onSubmit={submit} className="space-y-6">
+        {/* Business fields */}
         <fieldset>
           <legend>Business</legend>
           <div className="grid-2" style={{ gap: 8 }}>
@@ -132,6 +139,7 @@ export default function Page() {
           </div>
         </fieldset>
 
+        {/* Customer fields */}
         <fieldset>
           <legend>Customer</legend>
           <div className="grid-2" style={{ gap: 8 }}>
@@ -141,6 +149,7 @@ export default function Page() {
           <input name="customerAddress" placeholder="Address (optional)" style={{ marginTop: 8 }} />
         </fieldset>
 
+        {/* Invoice details */}
         <fieldset>
           <legend>Invoice details</legend>
           <div className="grid-2" style={{ gap: 8 }}>
@@ -152,6 +161,7 @@ export default function Page() {
           <textarea name="notes" placeholder="Notes (optional)" style={{ marginTop: 8 }}></textarea>
         </fieldset>
 
+        {/* Line items */}
         <fieldset>
           <legend>Line items</legend>
           <table className="data">
@@ -218,6 +228,7 @@ export default function Page() {
           </button>
         </fieldset>
 
+        {/* Totals */}
         <section className="card" id="totals">
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <strong>Subtotal</strong>
@@ -233,12 +244,17 @@ export default function Page() {
           </div>
         </section>
 
+        {/* Error banner with upgrade link */}
         {submitError && (
           <div style={{ color: 'red', marginBottom: 6 }}>
-            <strong>Error:</strong> {submitError}
+            <strong>Error:</strong> {submitError} —{' '}
+            <a href="/pricing" style={{ textDecoration: 'underline' }}>
+              Upgrade your plan
+            </a>
           </div>
         )}
 
+        {/* Submit buttons */}
         <div className="row" style={{ marginTop: 12, gap: 8 }}>
           <button type="submit" className="btn btn-primary" disabled={submitting}>
             {submitting ? 'Sending…' : 'Send invoice'}
