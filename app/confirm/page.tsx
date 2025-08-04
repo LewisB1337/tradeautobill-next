@@ -13,7 +13,7 @@ export default function ConfirmPage() {
 
   useEffect(() => {
     async function finishSignIn() {
-      const { data, error } = await supabase.auth.exchangeCodeForSession(params)
+      const { data, error } = await supabase.auth.exchangeCodeForSession()
       if (error) {
         console.error('[confirm] exchange error:', error)
         setStatus('error')

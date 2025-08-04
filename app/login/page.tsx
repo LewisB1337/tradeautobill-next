@@ -26,8 +26,7 @@ export default function LoginPage() {
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { redirectTo: `${window.location.origin}/confirm` },
-    })
+    options: { emailRedirectTo: `${location.origin}/confirm` }
 
     setMessage(
       error ? `❌ ${error.message}` : '✅ Check your email for the magic link!'
