@@ -1,48 +1,57 @@
-+ 'use client'
-  import './globals.css'
-  import type { Metadata } from 'next'
-  import HashRedirect from './HashRedirect'
-  import EnvLogger from '../components/EnvLogger'
-- import type { ReactNode } from 'react'
-+ import type { ReactNode } from 'react'
+'use client'
 
-+ import { useState } from 'react'
-+ import { SessionContextProvider } from '@supabase/auth-helpers-react'
-+ import { createBrowserSupabaseClient } from '@supabase/auth-helpers-nextjs'
+import './globals.css'
+import type { Metadata } from 'next'
+import HashRedirect from './HashRedirect'
+import EnvLogger from '../components/EnvLogger'
+import type { ReactNode } from 'react'
 
-  export const metadata: Metadata = {
-    title: 'Tradeautobill',
-    description: 'Create & email clean invoices fast.',
-  }
+import { useState } from 'react'
+import { SessionContextProvider } from '@supabase/auth-helpers-react'
+import { createBrowserSupabaseClient } from '@supabase/auth-helpers-nextjs'
 
-  export default function RootLayout({ children }: { children: ReactNode }) {
-+   // create a browser Supabase client for the Auth Helpers
-+   const [supabaseClient] = useState(() => createBrowserSupabaseClient())
+export const metadata: Metadata = {
+  title: 'Tradeautobill',
+  description: 'Create & email clean invoices fast.',
+}
 
-    return (
-+     <SessionContextProvider supabaseClient={supabaseClient} initialSession={null}>
-        <html lang="en">
-          <body>
-            <HashRedirect />
-            <EnvLogger />
+export default function RootLayout({ children }: { children: ReactNode }) {
+  // Create a browser Supabase client once
+  const [supabaseClient] = useState(() => createBrowserSupabaseClient())
 
-            <nav className="nav container" aria-label="Top">
-              <div className="logo"><a href="/">Tradeautobill</a></div>
-              <div className="row">
-                <a href="/pricing" className="btn">Pricing</a>
-                <a href="/account" className="btn">Account</a>
-              </div>
-            </nav>
+  return (
+    <SessionContextProvider supabaseClient={supabaseClient} initialSession={null}>
+      <html lang="en">
+        <body>
+          <HashRedirect />
+          <EnvLogger />
 
-            {children}
+          <nav className="nav container" aria-label="Top">
+            <div className="logo">
+              <a href="/">Tradeautobill</a>
+            </div>
+            <div className="row">
+              <a href="/pricing" className="btn">
+                Pricing
+              </a>
+              <a href="/account" className="btn">
+                Account
+              </a>
+            </div>
+          </nav>
 
-            <footer>
-              <div className="container">
-                <p>© 2025 Tradeautobill. <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/faq">FAQ</a></p>
-              </div>
-            </footer>
-          </body>
-        </html>
-+     </SessionContextProvider>
-    )
-  }
+          {children}
+
+          <footer>
+            <div className="container">
+              <p>
+                © 2025 Tradeautobill. <a href="/privacy">Privacy</a> ·{' '}
+                <a href="/terms">Terms</a> · <a href="/faq">FAQ</a>
+              </p>
+            </div>
+          </footer>
+        </body>
+      </html>
+    </SessionContextProvider>
+  )
+}
