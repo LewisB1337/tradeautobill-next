@@ -1,32 +1,25 @@
+// app/api/invoice/route.ts
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getUserFromRequest } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { getTierForUser } from '@/lib/tiers'
 
-type Item = { description: string; qty: number; unitPrice: number; vatRate: number }
-type InvoicePayload = Record<string, any> & { items: Item[] }
-
+// helper to HMAC-sign the body
 function sign(body: unknown) {
   const json = JSON.stringify(body)
-  const hmac = crypto.createHmac('sha256', process.env.N8N_HMAC_SECRET!)
-  hmac.update(json)
-  return hmac.digest('hex')
-}
-
-// TODO: Replace with real lookup (profiles table / Stripe)
-async function getTierForUser(_userId: string): Promise<'free'|'standard'|'pro'> {
-  return 'free'
+  return crypto.createHmac('sha256', process.env.N8N_HMAC_SECRET!).update(json).digest('hex')
 }
 
 export async function POST(req: Request) {
-  // 1) Auth
+  // 1) Authenticate
   const { user } = await getUserFromRequest()
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // 2) Parse/validate
-  let body: InvoicePayload
+  // 2) Parse & validate
+  let body: any
   try {
     body = await req.json()
   } catch {
@@ -36,25 +29,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
   }
 
-  // 3) Usage gating
+  // 3) Determine the real tier and enforce usage
   const tier = await getTierForUser(user.id)
   const { error: rpcError } = await supabaseAdmin.rpc('check_and_increment_usage', {
     p_user: user.id,
-    p_tier: tier
+    p_tier: tier,
   })
   if (rpcError) {
+    // rpcError.message will be 'Daily free limit reached', etc.
     return NextResponse.json({ error: rpcError.message }, { status: 429 })
   }
 
-  // 4) Forward to n8n with HMAC
-    const forward = { userId: user.id, tier, invoice: body };
-  const sig = sign(forward);
-
-  // ─────── Debug logging ───────
-  console.log('⟵⟵⟵ SIGNATURE DEBUG ⟵⟵⟵');
-  console.log('Payload JSON:', JSON.stringify(forward));
-  console.log('Computed HMAC:', sig);
-  // ─────────────────────────────
+  // 4) Forward to n8n, signed with your secret
+  const forward = { userId: user.id, tier, invoice: body }
+  const sig = sign(forward)
 
   const res = await fetch(process.env.N8N_WEBHOOK_URL!, {
     method: 'POST',
@@ -63,8 +51,7 @@ export async function POST(req: Request) {
       'x-hmac-signature': sig,
     },
     body: JSON.stringify(forward),
-  });
-
+  })
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')
