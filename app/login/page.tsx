@@ -12,9 +12,11 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
-  // Redirect to /create if already signed in
+  // Redirect if already signed in
   useEffect(() => {
-    if (session) router.replace('/create')
+    if (session) {
+      router.replace('/create')
+    }
   }, [session, router])
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -26,8 +28,10 @@ export default function LoginPage() {
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
-    options: { emailRedirectTo: `${location.origin}/confirm` }
+      options: { emailRedirectTo: `${location.origin}/confirm` },
+    })
 
+    // Now set the message and loading state
     setMessage(
       error ? `❌ ${error.message}` : '✅ Check your email for the magic link!'
     )
