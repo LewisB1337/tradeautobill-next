@@ -1,8 +1,8 @@
 // app/api/session/route.ts
 import { NextResponse } from 'next/server'
+import type { Database } from '@/types_db'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
-import type { Database } from '@/types_db'   // remove if you don’t have generated types
 
 // GET  ― return the current user (or 401)
 export async function GET() {
