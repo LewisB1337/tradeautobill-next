@@ -1,3 +1,8 @@
+// app/create/page.tsx
+'use client'
+
+import { useRouter } from 'next/navigation'
+...
 export default function Page(){
   return (
     <section className="container py-10">

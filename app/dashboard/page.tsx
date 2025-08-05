@@ -1,5 +1,8 @@
-'use client';
-import { useEffect, useState } from 'react';
+// app/create/page.tsx
+'use client'
+
+import { useRouter } from 'next/navigation'
+...
 
 type Invoice = { id:string, created_at:string, invoiceNumber:string, customerName:string, total:number, status:string, pdfUrl?:string };
 

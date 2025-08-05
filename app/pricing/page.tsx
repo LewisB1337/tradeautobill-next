@@ -1,7 +1,9 @@
-// app/pricing/page.tsx
+// app/create/page.tsx
 'use client'
 
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+...
+
 
 const LIMITS = {
   free:     { daily: 3,  monthly: 10 },
