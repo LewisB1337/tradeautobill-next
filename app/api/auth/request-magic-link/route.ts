@@ -16,9 +16,8 @@ export async function POST(request: NextRequest) {
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      // Make sure this matches your Confirm page path:
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/confirm`,
-  },
+  emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/confirm`,
+}
 })
 
   if (error)
