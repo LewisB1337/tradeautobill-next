@@ -1,5 +1,7 @@
+'use client';
+export const dynamic = 'force-dynamic';
+
 // app/create/page.tsx
-'use client'
 
 import { useRouter } from 'next/navigation'
 export default function Page(){

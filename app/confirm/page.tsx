@@ -1,39 +1,38 @@
-'use client'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
-import { useSupabaseClient } from '@supabase/auth-helpers-react'
+// app/confirm/page.tsx
+'use client';
+export const dynamic = 'force-dynamic';
 
-export default function ConfirmPage() {
-  const router = useRouter()
-  const params = useSearchParams()
-  const supabase = useSupabaseClient()
-  const [status, setStatus] = useState<'working' | 'error'>('working')
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useSupabaseClient } from '@supabase/auth-helpers-react';
 
-  // grab the "code" param from the URL
-  const code = params.get('code')
+export default function ConfirmClient() {
+  const router   = useRouter();
+  const params   = useSearchParams();
+  const supabase = useSupabaseClient();
+  const [status, setStatus] = useState<'working' | 'error'>('working');
+
+  const code = params.get('code');          // ?code=... from magic-link
 
   useEffect(() => {
     async function finishSignIn() {
       if (!code) {
-        console.error('[confirm] no code in URL')
-        setStatus('error')
-        return
+        setStatus('error');
+        return;
       }
 
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (error) {
-        console.error('[confirm] exchange error:', error)
-        setStatus('error')
+        setStatus('error');
       } else {
-        // ✅ cookies are now set, redirect
-        router.replace('/create')
+        router.replace('/create');          // ✅ cookies set, redirect
       }
     }
-    finishSignIn()
-  }, [supabase, router, code])
+    finishSignIn();
+  }, [code, supabase, router]);
 
   if (status === 'error') {
-    return <p style={{ color: 'red' }}>Sign-in failed. Try the link again.</p>
+    return <p style={{ color: 'red' }}>Sign-in failed. Try the link again.</p>;
   }
-  return <p>Signing you in…</p>
+  return <p>Signing you in…</p>;
 }

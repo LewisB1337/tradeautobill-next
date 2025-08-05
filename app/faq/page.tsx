@@ -1,11 +1,14 @@
-'use client'
-import { useRouter } from 'next/navigation'
+// app/faq/page.tsx
+'use client';
+export const dynamic = 'force-dynamic';
 
-export default function Page(){
+import { useRouter } from 'next/navigation';
+
+export default function Page() {
   return (
     <section className="container py-10">
       <h1>Help & FAQ</h1>
-      
+
       <p>Content goes here.</p>
     </section>
   );
