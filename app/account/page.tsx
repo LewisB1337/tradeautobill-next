@@ -94,4 +94,5 @@ export default function AccountPage() {
         Log out
       </button>
     </section>
-);
+  );
+}
