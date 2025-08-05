@@ -1,52 +1,72 @@
 'use client';
-export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSupabaseClient, useSession } from '@supabase/auth-helpers-react';
+import { useState } from 'react';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function LoginPage() {
-  const supabase = useSupabaseClient();
-  const session = useSession();
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle'|'sending'|'sent'|'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (session) router.replace('/create');
-  }, [session, router]);
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
-    setMessage(null);
-    const email = (new FormData(e.currentTarget).get('email') as string).trim();
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${location.origin}/confirm` },
-    });
-    setMessage(error ? `❌ ${error.message}` : '✅ Check your email for the magic link!');
-    setLoading(false);
+    setStatus('sending');
+    setError(null);
+
+    try {
+      const supabase = createClientComponentClient();
+      const redirectTo = `${window.location.origin}/confirm`;
+
+      const { error: err } = await supabase.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: redirectTo },
+      });
+
+      if (err) throw err;
+
+      setStatus('sent');
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message ?? 'Failed to send magic link');
+      setStatus('error');
+    }
   }
 
   return (
-    <section className="container max-w-md py-16">
-      <h1>Sign in with your email</h1>
-      <p className="muted">No passwords. We’ll send a one-time link.</p>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <input
-          name="email"
-          type="email"
-          required
-          placeholder="you@business.co.uk"
-          className="block w-full px-4 py-2 border rounded"
-          disabled={loading}
-        />
-        <button type="submit" className="btn btn-primary" disabled={loading}>
-          {loading ? 'Sending…' : 'Send magic link'}
-        </button>
+    <main className="container py-10 max-w-md">
+      <h1 style={{ marginTop: 0 }}>Sign in with your email</h1>
+      <p className="muted small">No passwords. We’ll send a one-time link.</p>
+
+      <form onSubmit={onSubmit} className="card" style={{ marginTop: 12 }}>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <label htmlFor="email" className="tiny muted">Email</label>
+          <input
+            id="email"
+            type="email"
+            placeholder="you@company.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={status === 'sending' || !email}
+          >
+            {status === 'sending' ? 'Sending…' : 'Send magic link'}
+          </button>
+
+          {status === 'sent' && (
+            <div style={{ color: 'green' }}>
+              Check your email for the sign-in link.
+            </div>
+          )}
+          {status === 'error' && error && (
+            <div style={{ color: 'crimson' }}>{error}</div>
+          )}
+        </div>
       </form>
-      {message && <p className="tiny muted mt-4">{message}</p>}
-    </section>
+    </main>
   );
 }
