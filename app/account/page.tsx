@@ -1,10 +1,9 @@
 'use client';
-
 export const dynamic = 'force-dynamic';
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import UsageMeter from '../components/UsageMeter';
+import UsageMeter from '../../components/UsageMeter';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 
 export default function AccountPage() {
@@ -12,7 +11,6 @@ export default function AccountPage() {
   const [daily, setDaily] = useState({ used: 0, limit: 3 });
   const [monthly, setMonthly] = useState({ used: 0, limit: 10 });
 
-  // 1 — load usage stats
   useEffect(() => {
     (async () => {
       try {
@@ -27,15 +25,15 @@ export default function AccountPage() {
     })();
   }, []);
 
-  // 2 — open Stripe portal
   async function openBillingPortal() {
-    const r = await fetch('/api/stripe/create-portal-session', { method: 'POST' });
+    const r = await fetch('/api/stripe/create-portal-session', {
+      method: 'POST',
+    });
     if (!r.ok) return alert('Could not open billing portal');
     const { url } = await r.json();
     window.location.href = url;
   }
 
-  // 3 — log out
   async function handleLogout() {
     await supabaseBrowser.auth.signOut();
     router.replace('/login');
@@ -47,7 +45,9 @@ export default function AccountPage() {
       <div className="grid-2">
         <div className="card">
           <h2>Your plan</h2>
-          <p>Tier: <strong>Free</strong></p>
+          <p>
+            Tier: <strong>Free</strong>
+          </p>
           <p>Renews: <span>—</span></p>
           <button onClick={openBillingPortal} className="btn btn-secondary">
             Manage subscription
@@ -59,6 +59,7 @@ export default function AccountPage() {
         </div>
       </div>
 
+      {/* Business profile form */}
       <form className="card" style={{ marginTop: 16 }}>
         <h2>Business profile</h2>
         <div className="grid-2">
@@ -76,21 +77,30 @@ export default function AccountPage() {
           Logo <input type="file" name="logo" accept="image/*" />
         </label>
         <div className="row" style={{ marginTop: 8 }}>
-          <button className="btn btn-primary" type="button">Save</button>
+          <button className="btn btn-primary" type="button">
+            Save
+          </button>
         </div>
       </form>
 
+      {/* Email preferences */}
       <form className="card" style={{ marginTop: 16 }}>
         <h2>Email preferences</h2>
         <label>
           <input type="checkbox" name="marketing_opt_in" /> Receive product updates
         </label>
         <div className="row" style={{ marginTop: 8 }}>
-          <button className="btn btn-secondary" type="button">Save</button>
+          <button className="btn btn-secondary" type="button">
+            Save
+          </button>
         </div>
       </form>
 
-      <button onClick={handleLogout} className="btn btn-link" style={{ marginTop: 12 }}>
+      <button
+        onClick={handleLogout}
+        className="btn btn-link"
+        style={{ marginTop: 12 }}
+      >
         Log out
       </button>
     </section>

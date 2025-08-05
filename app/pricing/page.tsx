@@ -1,5 +1,4 @@
 'use client';
-
 export const dynamic = 'force-dynamic';
 
 import React from 'react';
@@ -14,9 +13,8 @@ export default function PricingPage() {
       </div>
       <div className="card">
         <h2>Pro</h2>
-        <p>500 invoices/month &mdash; £25/month</p>
+        <p>500 invoices/month — £25/month</p>
       </div>
-      {/* Add more tiers or details as needed */}
     </section>
   );
 }

@@ -1,12 +1,11 @@
 'use client';
-
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 
 type Invoice = {
   id: string;
-  created_at: string;       // ISO date string
+  created_at: string;
   invoiceNumber: string;
   customerName: string;
   total: number;
@@ -22,7 +21,9 @@ export default function DashboardPage() {
 
   async function load(page = 1) {
     const r = await fetch(
-      `/api/invoices?page=${page}&q=${encodeURIComponent(q)}&status=${encodeURIComponent(status)}`
+      `/api/invoices?page=${page}&q=${encodeURIComponent(
+        q
+      )}&status=${encodeURIComponent(status)}`
     );
     if (!r.ok) return;
     const data = await r.json();
@@ -32,7 +33,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     load(1);
-  }, []); // run once on mount
+  }, []);
 
   return (
     <section className="container py-10">

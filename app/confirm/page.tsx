@@ -1,5 +1,4 @@
 'use client';
-
 export const dynamic = 'force-dynamic';
 
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -32,6 +31,5 @@ export default function ConfirmPage() {
   if (status === 'error') {
     return <p style={{ color: 'red' }}>Sign-in failed. Try the link again.</p>;
   }
-
   return <p>Signing you in…</p>;
 }

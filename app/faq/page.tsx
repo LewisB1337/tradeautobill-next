@@ -1,5 +1,4 @@
 'use client';
-
 export const dynamic = 'force-dynamic';
 
 import React from 'react';
@@ -16,7 +15,6 @@ export default function FaqPage() {
         <h2>What’s the free tier limit?</h2>
         <p>You can send up to 3 invoices a day, 10 a month on the free plan.</p>
       </div>
-      {/* Add more FAQs here */}
     </section>
   );
 }

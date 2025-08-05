@@ -1,5 +1,4 @@
 'use client';
-
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
@@ -13,11 +12,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  // Redirect if already signed in
   useEffect(() => {
-    if (session) {
-      router.replace('/create');
-    }
+    if (session) router.replace('/create');
   }, [session, router]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -25,17 +21,11 @@ export default function LoginPage() {
     setLoading(true);
     setMessage(null);
     const email = (new FormData(e.currentTarget).get('email') as string).trim();
-
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: {
-        emailRedirectTo: `${location.origin}/confirm`,
-      },
+      options: { emailRedirectTo: `${location.origin}/confirm` },
     });
-
-    setMessage(
-      error ? `❌ ${error.message}` : '✅ Check your email for the magic link!'
-    );
+    setMessage(error ? `❌ ${error.message}` : '✅ Check your email for the magic link!');
     setLoading(false);
   }
 
