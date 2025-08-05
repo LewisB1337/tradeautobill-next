@@ -2,7 +2,6 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-...
 
 import UsageMeter from '../components/UsageMeter'
 import { useEffect, useRef, useState } from 'react'

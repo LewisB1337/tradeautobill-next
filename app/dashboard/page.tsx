@@ -2,7 +2,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-...
+
 
 type Invoice = { id:string, created_at:string, invoiceNumber:string, customerName:string, total:number, status:string, pdfUrl?:string };
 
