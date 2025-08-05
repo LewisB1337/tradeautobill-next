@@ -1,34 +1,27 @@
 // app/api/status/[jobId]/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabaseServer'
+import { NextResponse } from 'next/server'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
 
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
-
-export async function GET(req: NextRequest, { params }: { params: { jobId: string } }) {
+export async function GET(
+  req: Request,
+  { params }: { params: { jobId: string } }
+) {
   const { jobId } = params
-  const supabase = supabaseServer()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
 
-  const { data, error } = await supabase
-    .from('workflow_jobs')
-    .select('job_id,status,updated_at')
+  // Lookup the status record
+  const { data, error } = await supabaseAdmin
+    .from('invoice_status')
+    .select('status, pdf_url')
     .eq('job_id', jobId)
     .single()
 
-  if (error) {
-    // if no record yet, treat as in progress
-    return NextResponse.json({ job: { jobId, status: 'in_progress' } })
+  if (error || !data) {
+    // If not found, treat as still pending or failed
+    return NextResponse.json({ status: 'working', pdfUrl: null })
   }
 
   return NextResponse.json({
-    job: {
-      jobId: data.job_id,
-      status: data.status,
-      updatedAt: data.updated_at,
-    },
+    status: data.status,        // 'queued' | 'working' | 'sent' | 'failed'
+    pdfUrl: data.pdf_url ?? null,
   })
 }
