@@ -1,5 +1,6 @@
 'use client';
-export const dynamic = 'force-dynamic';
+export const dynamic = 'error';
+
 
 // app/create/page.tsx
 

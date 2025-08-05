@@ -1,6 +1,7 @@
-// app/confirm/page.tsx
 'use client';
-export const dynamic = 'force-dynamic';
+export const dynamic = 'error';
+
+// app/confirm/page.tsx
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';

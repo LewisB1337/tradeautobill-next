@@ -1,6 +1,7 @@
-// app/account/page.tsx
 'use client';
-export const dynamic = 'force-dynamic';
+export const dynamic = 'error';
+
+// app/account/page.tsx
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
