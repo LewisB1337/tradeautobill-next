@@ -14,6 +14,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: 'Missing token' }, { status: 400 })
 
   const { data, error } = await supabase.auth.verifyOtp({
+    email,          // ← include the user’s e-mail
     token,
     type: 'magiclink',
   })
