@@ -1,23 +1,18 @@
-﻿import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+// app/auth/callback/page.tsx
+'use client'
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabaseClient'
 
-export async function GET(req: Request) {
-  const { searchParams, origin } = new URL(req.url);
-  const code = searchParams.get("code");
-
-  if (!code) {
-    // No code in URL → nothing to exchange
-    return NextResponse.redirect(`${origin}/auth/error?reason=missing_code`);
-  }
-
-  try {
-    const supabase = createRouteHandlerClient({ cookies });
-    await supabase.auth.exchangeCodeForSession(code);
-    // Session cookie is now set; send user somewhere useful
-    return NextResponse.redirect(`${origin}/`);
-  } catch (err) {
-    console.error("exchangeCodeForSession failed", err);
-    return NextResponse.redirect(`${origin}/auth/error?reason=exchange_failed`);
-  }
+export default function AuthCallback() {
+  const router = useRouter()
+  useEffect(() => {
+    const run = async () => {
+      const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
+      if (error) console.error('exchange error', error)
+      router.replace('/dashboard') // wherever you want to land
+    }
+    run()
+  }, [router])
+  return <p>Signing you in…</p>
 }
