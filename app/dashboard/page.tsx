@@ -1,6 +1,7 @@
 'use client';
 export const dynamic = 'error';
 
+
 // app/dashboard/page.tsx
 
 import { useState, useEffect } from 'react';

@@ -1,6 +1,7 @@
 'use client';
 export const dynamic = 'error';
 
+
 // app/confirm/page.tsx
 
 import { useRouter, useSearchParams } from 'next/navigation';

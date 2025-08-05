@@ -1,6 +1,7 @@
 'use client';
 export const dynamic = 'error';
 
+
 // app/create/page.tsx
 
 import { useRouter } from 'next/navigation';

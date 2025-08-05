@@ -3,6 +3,7 @@ export const dynamic = 'error';
 
 
 
+
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSupabaseClient, useSession } from '@supabase/auth-helpers-react'
