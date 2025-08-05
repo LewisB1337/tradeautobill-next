@@ -9,19 +9,17 @@ export default function ConfirmPage() {
   const searchParams = useSearchParams();
 
   const [status, setStatus] = useState<'checking' | 'ok' | 'error'>('checking');
-  const [message, setMessage] = useState<string>('Confirming your sign-in…');
+  const [message, setMessage] = useState('Confirming your sign-in…');
 
   useEffect(() => {
     const run = async () => {
       try {
         const supabase = createClientComponentClient();
 
-        // New PKCE flow (magic link / oauth) sends ?code=...&type=...
+        // Modern PKCE: ?code=...
         const code = searchParams.get('code');
-        const type = (searchParams.get('type') || '').toLowerCase();
-
         if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession({ code });
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) throw error;
           setStatus('ok');
           setMessage('Signed in. Redirecting…');
@@ -29,8 +27,9 @@ export default function ConfirmPage() {
           return;
         }
 
-        // Fallback for older emails: ?token_hash=...&type=magiclink|recovery|signup
+        // Fallback: ?token_hash=...&type=magiclink|recovery|signup
         const token_hash = searchParams.get('token_hash');
+        const type = (searchParams.get('type') || '').toLowerCase();
         if (token_hash && type) {
           const { error } = await supabase.auth.verifyOtp({ token_hash, type: type as any });
           if (error) throw error;
@@ -48,7 +47,6 @@ export default function ConfirmPage() {
         setMessage(err?.message || 'Failed to confirm sign-in.');
       }
     };
-
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -56,9 +54,7 @@ export default function ConfirmPage() {
   return (
     <main className="container py-10 max-w-md">
       <h1 style={{ marginTop: 0 }}>Confirming…</h1>
-      <p className={status === 'error' ? 'muted small' : 'small'}>
-        {message}
-      </p>
+      <p className={status === 'error' ? 'muted small' : 'small'}>{message}</p>
       {status === 'error' && (
         <p className="small">
           <a className="btn btn-secondary" href="/login">Back to login</a>
