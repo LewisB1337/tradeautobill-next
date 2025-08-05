@@ -1,29 +1,28 @@
-// app/api/auth/verify/route.ts
 import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+export async function GET(req: Request) {
+  const supabase = createRouteHandlerClient({ headers: req.headers })
 
-export async function POST(request: NextRequest) {
-  const { token } = await request.json()
-  if (!token || typeof token !== 'string')
-    return NextResponse.json({ message: 'Missing token' }, { status: 400 })
+  const { searchParams } = new URL(req.url)
 
-  const { data, error } = await supabase.auth.verifyOtp({
-    email,          // ← include the user’s e-mail
-    token,
-    type: 'magiclink',
-  })
+  // pull everything you need from the query string
+  const email      = searchParams.get('email')
+  const tokenHash  = searchParams.get('token_hash')   // ← preferred
+  const token      = searchParams.get('token')        // ← 6-digit OTP, if you use those
 
-  if (error)
-    return NextResponse.json(
-      { message: error.message },
-      { status: error.status ?? 500 }
-    )
+  if (!email || !(tokenHash || token)) {
+    return NextResponse.json({ message: 'Missing parameters' }, { status: 400 })
+  }
 
-  return NextResponse.json({ user: data.user })
+  /* ---------- verify ---------- */
+  const { data, error } = await supabase.auth.verifyOtp(
+    tokenHash
+      ? { token_hash: tokenHash, type: 'email' }          // magic-link flow
+      : { email, token: token!, type: 'email' },          // 6-digit OTP flow
+  )
+
+  if (error) return NextResponse.json({ message: error.message }, { status: 400 })
+
+  return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/dashboard`)
 }
