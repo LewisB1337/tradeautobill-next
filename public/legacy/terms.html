@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Terms — Tradeautobill</title>
+  <meta name="description" content="Service terms for Tradeautobill." />
+  <meta property="og:title" content="Terms — Tradeautobill" />
+  <meta property="og:description" content="Service terms for Tradeautobill." />
+  <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#0066FF"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet" />
+  <style>
+    :root{
+      --color-bg:#FFFFFF; --color-text:#111; --color-muted:#444;
+      --color-accent:#0066FF; --color-border:#E6E6E6; --color-soft:#F7F9FF;
+      --spacing:8px; --font-body:'Inter',sans-serif; --font-heading:'Space Grotesk',sans-serif;
+      --radius:10px; --shadow:0 6px 24px rgba(0,0,0,0.06);
+    }
+    *,*::before,*::after{box-sizing:border-box}
+    body{margin:0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);line-height:1.5}
+    a{color:var(--color-accent);text-decoration:none}
+    img{max-width:100%;display:block}
+    .container{max-width:1140px;margin:0 auto;padding:0 16px}
+    .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+    .muted{color:#555}
+    .small{font-size:.95rem}
+    .tiny{font-size:.85rem}
+
+    /* NAV */
+    .nav{display:flex;justify-content:space-between;align-items:center;padding:16px 0}
+    .logo{font-family:var(--font-heading);font-weight:700;font-size:1.25rem}
+    .nav a.btn{padding:10px 16px;border:1px solid var(--color-border);border-radius:8px}
+
+    /* COMMON */
+    .btn{display:inline-flex;align-items:center;justify-content:center;font-weight:700;border:none;border-radius:10px;cursor:pointer}
+    .btn-primary{background:var(--color-accent);color:#fff;padding:12px 16px}
+    .btn-secondary{background:#fff;color:var(--color-text);padding:12px 16px;border:1px solid var(--color-border)}
+    .btn-link{background:none;border:none;padding:0;color:var(--color-accent);cursor:pointer}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .card{border:1px solid var(--color-border);border-radius:12px;padding:18px;background:#fff;box-shadow:var(--shadow)}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+    .data{width:100%;border-collapse:collapse;border:1px solid var(--color-border)}
+    .data th,.data td{padding:10px;border-top:1px solid var(--color-border);text-align:left}
+    .num{text-align:right}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--color-border);font-size:.85rem}
+    .max-w-md{max-width:560px;margin:0 auto}
+    .py-10{padding:56px 0}
+    .py-12{padding:64px 0}
+    .py-16{padding:96px 0}
+
+    /* FORMS */
+    form input, form select, form textarea{width:100%;padding:12px 14px;border:1px solid var(--color-border);border-radius:8px}
+    fieldset{border:1px solid var(--color-border);border-radius:12px;padding:16px;margin:16px 0}
+    legend{padding:0 6px;font-weight:700}
+
+    /* HERO (for confirm/login simple) */
+    .hero-simple{padding:72px 0 32px}
+
+    /* Usage meter */
+    .meter{display:flex;gap:12px;align-items:center;margin:8px 0}
+    .bar{flex:1;height:10px;background:#eee;border-radius:8px;overflow:hidden}
+    .bar > span{display:block;height:100%;background:var(--color-accent);width:0}
+
+    /* FOOTER */
+    footer{padding:28px 0;text-align:center;color:#666;font-size:.9rem}
+
+    @media (max-width: 960px){
+      .grid-2{grid-template-columns:1fr}
+    }
+  </style>
+
+</head>
+<body>
+
+    <nav class="nav container" aria-label="Top">
+      <div class="logo"><a href="/index.html">Tradeautobill</a></div>
+      <div class="row">
+        <a href="/pricing.html" class="btn">Pricing</a>
+        <a href="/account.html" class="btn">Account</a>
+      </div>
+    </nav>
+    
+
+  <section class="container py-10">
+    <h1>Terms of Service</h1>
+    <p class="muted">Last updated: 2 August 2025</p>
+    <h2>1. Service</h2><p>We generate and email invoices based on your inputs.</p>
+    <h2>2. Acceptable use</h2><p>No spam or unlawful content.</p>
+    <h2>3. Liability</h2><p>Service is provided “as is” with a reasonable efforts SLA.</p>
+    <h2>4. Data retention</h2><p>Free: 7 days, Standard: 6 months, Pro: 12 months.</p>
+    <h2>5. Contact</h2><p>support@tradeautobill.com</p>
+  </section>
+
+
+    <footer>
+      <div class="container">
+        <p>© 2025 Tradeautobill. <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/faq.html">FAQ</a></p>
+      </div>
+    </footer>
+    
+
+</body>
+</html>

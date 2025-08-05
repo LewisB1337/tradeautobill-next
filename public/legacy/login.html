@@ -1,0 +1,111 @@
+// app/login/page.tsx
+'use client';
+
+import { useState } from 'react';
+import { supabaseBrowser } from '../../lib/supabaseBrowser';
+import './login.css'; // pull in your CSS (you can extract from the <style> above)
+
+export default function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+
+  const sendMagicLink = async () => {
+    setStatus('sending');
+    const { error } = await supabaseBrowser.auth.signInWithOtp({
+  email,
+  options: {
+    emailRedirectTo: `${window.location.origin}/confirm`
+  }
+});
+    if (error) {
+      console.error(error);
+      setStatus('error');
+    } else {
+      setStatus('sent');
+    }
+  };
+
+  return (
+    <>
+      <nav className="nav container" aria-label="Top">
+        <div className="logo"><a href="/">Tradeautobill</a></div>
+        <div className="row">
+          <a href="/pricing" className="btn">Pricing</a>
+          <a href="/account" className="btn">Account</a>
+        </div>
+      </nav>
+
+      <section className="container max-w-md py-16">
+        <h1>Sign in with your email</h1>
+        <p className="muted">No passwords. We’ll send a one-time link.</p>
+
+        <form
+          id="loginForm"
+          onSubmit={e => {
+            e.preventDefault();
+            sendMagicLink();
+          }}
+        >
+          <label className="sr-only" htmlFor="loginEmail">Email</label>
+          <input
+            id="loginEmail"
+            name="email"
+            type="email"
+            required
+            placeholder="you@business.co.uk"
+            autoComplete="email"
+            value={email}
+            onChange={e => setEmail(e.currentTarget.value)}
+          />
+
+          <div className="row" style={{ marginTop: 10 }}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={status === 'sending'}
+            >
+              {status === 'sending' ? 'Sending…' : 'Send magic link'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={sendMagicLink}
+              disabled={status === 'sending'}
+            >
+              Resend link
+            </button>
+            <button
+              type="button"
+              className="btn btn-link"
+              onClick={() => document.getElementById('loginEmail')?.focus()}
+            >
+              Change email
+            </button>
+          </div>
+        </form>
+
+        <p id="loginMsg" className="tiny muted" style={{ marginTop: 10 }}>
+          {status === 'sent'
+            ? '✅ Check your inbox for the magic link.'
+            : status === 'error'
+            ? '❌ Failed to send link. Try again?'
+            : 'By continuing you agree to our '}
+          {status === 'idle' && (
+            <>
+              our <a href="/terms">Terms</a> and <a href="/privacy">Privacy</a>.
+            </>
+          )}
+        </p>
+      </section>
+
+      <footer>
+        <div className="container">
+          <p>
+            © 2025 Tradeautobill. <a href="/privacy">Privacy</a> ·{' '}
+            <a href="/terms">Terms</a> · <a href="/faq">FAQ</a>
+          </p>
+        </div>
+      </footer>
+    </>
+  );
+}

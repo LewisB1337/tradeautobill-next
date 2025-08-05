@@ -1,91 +1,63 @@
 // app/pricing/_client.tsx
 'use client';
 
-import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 
-/* ------------------------------------------------------------- */
-/*  data                                                         */
-/* ------------------------------------------------------------- */
-
-const LIMITS = {
-  free:     { daily: 3,  monthly: 10 },
-  standard: { daily: 50, monthly: 200 },
-  pro:      { daily: null, monthly: null },
-};
-
-/* ------------------------------------------------------------- */
-/*  helper component                                             */
-/* ------------------------------------------------------------- */
-
-interface CardProps {
-  title:    string;
-  price:    string;
-  limits:   { daily: number | null; monthly: number | null };
-  bullet?:  string;
-  ctaText:  string;
-  ctaHref:  string;
-  featured?: boolean;
-}
+type PlanKey = 'free' | 'standard' | 'pro';
 
 function PlanCard({
   title,
-  price,
-  limits,
-  bullet,
-  ctaText,
-  ctaHref,
-  featured,
-}: CardProps) {
-  const daily   = limits.daily   ? `${limits.daily}/day`     : 'Unlimited';
-  const monthly = limits.monthly ? `${limits.monthly}/month` : 'Unlimited';
-
+  priceText,
+  features,
+  borderColor,
+  cta,
+}: {
+  title: string;
+  priceText: string;             // e.g. "£9/mo"
+  features: string[];
+  borderColor?: string;          // e.g. "#cfe3ff" for Standard (legacy)
+  cta: React.ReactNode;
+}) {
   return (
     <article
       className="card"
       style={{
-        flex: '1 1 320px',
         maxWidth: 360,
-        border: featured ? '2px solid royalblue' : '1px solid #e5e7eb',
-        transform: featured ? 'scale(1.03)' : undefined,
-        padding: '1.5rem',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textAlign: 'center',
+        flex: '1 1 320px',
+        borderColor: borderColor ?? 'var(--color-border)',
       }}
     >
       <h2 style={{ marginTop: 0 }}>{title}</h2>
+      <p className="muted" style={{ marginTop: -6 }}>{priceText}</p>
 
-      <p
-        style={{ fontSize: '1.5rem', margin: '0.25rem 0 1rem' }}
-        dangerouslySetInnerHTML={{ __html: price }}
-      />
-
-      <ul style={{ listStyle: 'none', padding: 0, lineHeight: '1.6', marginBottom: '1rem' }}>
-        <li>{daily} invoices&nbsp;/&nbsp;day</li>
-        <li>{monthly} invoices&nbsp;/&nbsp;month</li>
-        {bullet && <li>{bullet}</li>}
+      <ul style={{ paddingLeft: 18, margin: '12px 0' }}>
+        {features.map((f, i) => <li key={i}>{f}</li>)}
       </ul>
 
-      <Link
-        href={ctaHref}
-        className="btn btn-primary"
-        style={{ marginTop: 'auto', width: '100%' }}
-      >
-        {ctaText}
-      </Link>
+      <div style={{ marginTop: 12 }}>{cta}</div>
     </article>
   );
 }
 
-/* ------------------------------------------------------------- */
-/*  exported client page body                                    */
-/* ------------------------------------------------------------- */
-
 export default function PricingClient() {
-  const params  = useSearchParams();           // ← safe in client only
-  const coupon  = params.get('coupon');
+  const router = useRouter();
+  const params = useSearchParams();
+  const coupon = params.get('coupon');
+
+  async function handleUpgrade(plan: PlanKey) {
+    try {
+      const res = await fetch('/api/session', { credentials: 'include' });
+      if (res.status === 401) {
+        router.push('/login');
+        return;
+      }
+      // Legacy behavior: send them to Account to manage upgrade
+      router.push(`/account?plan=${plan}`);
+    } catch {
+      router.push('/login');
+    }
+  }
 
   return (
     <>
@@ -96,36 +68,57 @@ export default function PricingClient() {
       )}
 
       <div
-        style={{
-          display: 'flex',
-          gap: '1.5rem',
-          flexWrap: 'wrap',
-          justifyContent: 'center',
-        }}
+        className="grid-2"
+        // Legacy had 3 equal columns:
+        style={{ gridTemplateColumns: '1fr 1fr 1fr' }}
       >
         <PlanCard
           title="Free"
-          price="£0"
-          limits={LIMITS.free}
-          ctaText="Start free"
-          ctaHref="/create"
+          priceText="£0"
+          features={[
+            '3 invoices/day, 10/month',
+            'PDF email delivery',
+            'Watermark',
+            '7-day storage',
+          ]}
+          cta={
+            <Link href="/login" className="btn btn-secondary">
+              Start free
+            </Link>
+          }
         />
+
         <PlanCard
           title="Standard"
-          price="£12&nbsp;/&nbsp;month"
-          limits={LIMITS.standard}
-          bullet="No watermark  •  Hosted PDF"
-          ctaText="Upgrade"
-          ctaHref="/api/stripe/checkout?plan=standard"
-          featured
+          priceText="£9/mo"
+          borderColor="#cfe3ff"
+          features={[
+            '50 invoices/month',
+            'No watermark, your logo',
+            'Saved business & clients',
+            '6-month storage',
+          ]}
+          cta={
+            <button className="btn btn-primary" onClick={() => handleUpgrade('standard')}>
+              Upgrade
+            </button>
+          }
         />
+
         <PlanCard
           title="Pro"
-          price="£29&nbsp;/&nbsp;month"
-          limits={LIMITS.pro}
-          bullet="Priority support  •  Unlimited invoices"
-          ctaText="Upgrade"
-          ctaHref="/api/stripe/checkout?plan=pro"
+          priceText="£29/mo"
+          features={[
+            'Up to 500 invoices/month',
+            'Hosted links & webhooks',
+            'Custom footer/colours',
+            '12-month storage',
+          ]}
+          cta={
+            <button className="btn btn-secondary" onClick={() => handleUpgrade('pro')}>
+              Go Pro
+            </button>
+          }
         />
       </div>
     </>

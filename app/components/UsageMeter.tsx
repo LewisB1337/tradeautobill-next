@@ -3,8 +3,8 @@
 import * as React from 'react';
 
 type Usage = {
-  used: number;   // e.g. 42
-  limit: number;  // e.g. 100
+  used: number;
+  limit: number;
 };
 
 type Props = {
@@ -21,17 +21,36 @@ function clampPct(used: number, limit: number) {
 }
 
 function barColor(pct: number) {
-  // Simple traffic-light: <70 green, 70–90 orange, >90 red
-  if (pct > 90) return '#e53935';
-  if (pct >= 70) return '#fb8c00';
-  return '#43a047';
+  if (pct > 90) return '#e53935';     // red
+  if (pct >= 70) return '#fb8c00';    // orange
+  return '#43a047';                   // green
 }
+
+const containerStyle: React.CSSProperties = {
+  border: '1px solid #e5e7eb',
+  borderRadius: 10,
+  padding: 12,
+  background: 'white',
+};
+
+const headerStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  marginBottom: 8,
+};
+
+const titleStyle: React.CSSProperties = {
+  fontWeight: 700,
+  color: '#111',
+  fontSize: 14,
+};
 
 const rowStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: '120px 1fr auto',
+  gridTemplateColumns: '80px 1fr auto',
   alignItems: 'center',
   gap: 12,
+  marginBottom: 10,
 };
 
 const labelStyle: React.CSSProperties = {
@@ -56,31 +75,33 @@ const numberStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-export default function UsageMeter({ daily, monthly, className, title = 'Usage' }: Props) {
+export default function UsageMeter({
+  daily,
+  monthly,
+  className,
+  title = 'Usage',
+}: Props) {
   const dailyPct = clampPct(daily.used, daily.limit);
   const monthlyPct = clampPct(monthly.used, monthly.limit);
-
   const nf = React.useMemo(() => new Intl.NumberFormat(), []);
 
   return (
-    <div
-      className={className}
-      style={{
-        border: '1px solid #e5e7eb',
-        borderRadius: 10,
-        padding: 12,
-        background: 'white',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-        <div style={{ fontWeight: 700, color: '#111', fontSize: 14 }}>{title}</div>
+    <div className={className} style={containerStyle}>
+      <div style={headerStyle}>
+        <div style={titleStyle}>{title}</div>
       </div>
 
       {/* Daily */}
-      <div style={{ ...rowStyle, marginBottom: 10 }}>
+      <div style={rowStyle}>
         <div style={labelStyle}>Today</div>
-        <div style={trackStyle} aria-label="Daily usage" role="progressbar"
-             aria-valuemin={0} aria-valuemax={100} aria-valuenow={dailyPct}>
+        <div
+          style={trackStyle}
+          role="progressbar"
+          aria-label="Daily usage"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={dailyPct}
+        >
           <div
             style={{
               width: `${dailyPct}%`,
@@ -98,8 +119,14 @@ export default function UsageMeter({ daily, monthly, className, title = 'Usage' 
       {/* Monthly */}
       <div style={rowStyle}>
         <div style={labelStyle}>This month</div>
-        <div style={trackStyle} aria-label="Monthly usage" role="progressbar"
-             aria-valuemin={0} aria-valuemax={100} aria-valuenow={monthlyPct}>
+        <div
+          style={trackStyle}
+          role="progressbar"
+          aria-label="Monthly usage"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={monthlyPct}
+        >
           <div
             style={{
               width: `${monthlyPct}%`,
@@ -116,4 +143,3 @@ export default function UsageMeter({ daily, monthly, className, title = 'Usage' 
     </div>
   );
 }
-
