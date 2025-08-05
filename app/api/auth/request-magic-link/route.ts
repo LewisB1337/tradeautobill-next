@@ -17,9 +17,9 @@ export async function POST(request: NextRequest) {
     email,
     options: {
       // Make sure this matches your Confirm page path:
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/confirm`,
-    },
-  })
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/confirm`,
+  },
+})
 
   if (error)
     return NextResponse.json(
