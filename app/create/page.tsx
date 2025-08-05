@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import UsageMeter from '../../components/UsageMeter';
+import UsageMeter from '../components/UsageMeter';
 
 type Item = {
   description: string;

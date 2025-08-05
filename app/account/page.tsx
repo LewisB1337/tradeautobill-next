@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import UsageMeter from '../../components/UsageMeter';
+import UsageMeter from '../components/UsageMeter';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 
 export default function AccountPage() {
