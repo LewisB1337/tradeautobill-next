@@ -1,6 +1,4 @@
-// app/create/page.tsx
 'use client'
-
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
