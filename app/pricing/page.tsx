@@ -1,1 +1,22 @@
-'use client';export const dynamic = 'force-dynamic';// app/pricing/page.tsximport { Suspense } from 'react';import type { Metadata } from 'next';import PricingClient from './_client';      // relative importexport const metadata: Metadata = {  title: 'Pricing · TradeAutoBill',};export default function PricingPage() {  return (    <section className="container py-16">      <h1 style={{ textAlign: 'center', marginBottom: '2rem' }}>Pricing</h1>      {/* Anything that never needs the browser can stay right here … */}      <Suspense fallback={<div style={{ height: 300 }} />}>        <PricingClient />                   {/* browser-only logic lives here */}      </Suspense>    </section>  );}
+'use client';
+
+export const dynamic = 'force-dynamic';
+
+import React from 'react';
+
+export default function PricingPage() {
+  return (
+    <section className="container py-10">
+      <h1>Pricing</h1>
+      <div className="card">
+        <h2>Free</h2>
+        <p>3 invoices/day, 10/month</p>
+      </div>
+      <div className="card">
+        <h2>Pro</h2>
+        <p>500 invoices/month &mdash; £25/month</p>
+      </div>
+      {/* Add more tiers or details as needed */}
+    </section>
+  );
+}
