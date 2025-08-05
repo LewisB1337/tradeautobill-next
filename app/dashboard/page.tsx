@@ -14,20 +14,20 @@ type Invoice = {
 };
 
 export default function DashboardPage() {
-  const [items, setItems] = useState<Invoice[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [nextPage, setNextPage] = useState<number>();
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
 
   async function load(page = 1) {
-    const r = await fetch(
+    const res = await fetch(
       `/api/invoices?page=${page}&q=${encodeURIComponent(
         q
       )}&status=${encodeURIComponent(status)}`
     );
-    if (!r.ok) return;
-    const data = await r.json();
-    setItems(data.items || []);
+    if (!res.ok) return;
+    const data = await res.json();
+    setInvoices(data.items || []);
     setNextPage(data.nextPage);
   }
 
@@ -37,13 +37,10 @@ export default function DashboardPage() {
 
   return (
     <section className="container py-10">
-      <header className="row">
-        <h1 style={{ margin: 0 }}>Dashboard</h1>
-        <span className="pill">Standard</span>
-      </header>
+      <h1>Dashboard</h1>
       <div className="row" style={{ margin: '12px 0' }}>
         <input
-          placeholder="Search customer or invoice #"
+          placeholder="Search…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -53,7 +50,7 @@ export default function DashboardPage() {
           <option value="queued">queued</option>
           <option value="failed">failed</option>
         </select>
-        <button className="btn btn-secondary" onClick={() => load(1)}>
+        <button onClick={() => load(1)} className="btn btn-secondary">
           Search
         </button>
       </div>
@@ -69,23 +66,23 @@ export default function DashboardPage() {
           </tr>
         </thead>
         <tbody>
-          {items.map((it) => (
-            <tr key={it.id}>
-              <td>{new Date(it.created_at).toLocaleDateString()}</td>
-              <td>{it.invoiceNumber}</td>
-              <td>{it.customerName}</td>
-              <td className="num">£{it.total.toFixed(2)}</td>
-              <td>{it.status}</td>
+          {invoices.map((inv) => (
+            <tr key={inv.id}>
+              <td>{new Date(inv.created_at).toLocaleDateString()}</td>
+              <td>{inv.invoiceNumber}</td>
+              <td>{inv.customerName}</td>
+              <td className="num">£{inv.total.toFixed(2)}</td>
+              <td>{inv.status}</td>
               <td className="num">
-                <a className="btn btn-link" href={`/status/${it.id}`}>
+                <a href={`/status/${inv.id}`} className="btn btn-link">
                   View
                 </a>
-                {it.pdfUrl && (
+                {inv.pdfUrl && (
                   <a
-                    className="btn btn-link"
+                    href={inv.pdfUrl}
                     target="_blank"
-                    href={it.pdfUrl}
                     rel="noreferrer"
+                    className="btn btn-link"
                   >
                     Download
                   </a>
@@ -93,9 +90,7 @@ export default function DashboardPage() {
                 <button
                   className="btn btn-link"
                   onClick={() =>
-                    fetch(`/api/invoices/${it.id}/resend`, {
-                      method: 'POST',
-                    })
+                    fetch(`/api/invoices/${inv.id}/resend`, { method: 'POST' })
                   }
                 >
                   Resend
@@ -105,13 +100,14 @@ export default function DashboardPage() {
           ))}
         </tbody>
       </table>
-      <nav className="row" style={{ marginTop: 12 }}>
-        {nextPage && (
-          <button className="btn btn-secondary" onClick={() => load(nextPage)}>
-            Next
-          </button>
-        )}
-      </nav>
+      {nextPage && (
+        <button
+          onClick={() => load(nextPage)}
+          className="btn btn-secondary"
+        >
+          Next
+        </button>
+      )}
     </section>
   );
 }

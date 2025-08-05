@@ -21,44 +21,43 @@ export default function CreatePage() {
   const [daily, setDaily] = useState({ used: 0, limit: 3 });
   const [monthly, setMonthly] = useState({ used: 0, limit: 10 });
   const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      try {
-        const r = await fetch('/api/usage');
-        if (!r.ok) return;
-        const u = await r.json();
-        setDaily({ used: u.dailyUsed, limit: u.dailyLimit });
-        setMonthly({ used: u.monthlyUsed, limit: u.monthlyLimit });
-      } catch {}
+      const res = await fetch('/api/usage');
+      if (!res.ok) return;
+      const u = await res.json();
+      setDaily({ used: u.dailyUsed, limit: u.dailyLimit });
+      setMonthly({ used: u.monthlyUsed, limit: u.monthlyLimit });
     })();
   }, []);
 
-  async function submit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    setSubmitError(null);
+    setError(null);
+
     try {
-      const formData = Object.fromEntries(
-        new FormData(formRef.current!).entries()
-      );
-      const payload = { ...formData, items };
-      const r = await fetch('/api/invoice', {
+      const data = {
+        ...(Object.fromEntries(new FormData(formRef.current!).entries())),
+        items,
+      };
+      const res = await fetch('/api/invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(data),
       });
-      if (r.status === 429) {
-        const { error } = await r.json();
-        setSubmitError(error);
+      if (res.status === 429) {
+        const { error } = await res.json();
+        setError(error);
         return;
       }
-      if (!r.ok) throw new Error(`Invoice API failed: ${r.status}`);
-      const { jobId } = await r.json();
+      if (!res.ok) throw new Error(res.statusText);
+      const { jobId } = await res.json();
       router.replace(`/status/${encodeURIComponent(jobId)}`);
     } catch (err: any) {
-      setSubmitError(err.message || 'Unknown error');
+      setError(err.message || 'Unknown error');
     } finally {
       setSubmitting(false);
     }
@@ -66,16 +65,14 @@ export default function CreatePage() {
 
   return (
     <section className="container py-10">
-      <header className="row">
-        <h1>Create invoice</h1>
-      </header>
+      <h1>Create invoice</h1>
       <UsageMeter daily={daily} monthly={monthly} />
-      <form ref={formRef} onSubmit={submit}>
-        {/* your form fields */}
+      <form ref={formRef} onSubmit={handleSubmit}>
+        {/* …your form fields here… */}
         <button type="submit" disabled={submitting}>
           {submitting ? 'Sending…' : 'Send invoice'}
         </button>
-        {submitError && <p className="error">{submitError}</p>}
+        {error && <p className="error">{error}</p>}
       </form>
     </section>
   );

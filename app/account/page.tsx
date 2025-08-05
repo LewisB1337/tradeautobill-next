@@ -13,24 +13,23 @@ export default function AccountPage() {
 
   useEffect(() => {
     (async () => {
-      try {
-        const r = await fetch('/api/usage');
-        if (!r.ok) return;
-        const u = await r.json();
-        setDaily({ used: u.dailyUsed, limit: u.dailyLimit });
-        setMonthly({ used: u.monthlyUsed, limit: u.monthlyLimit });
-      } catch (e) {
-        console.error('Error fetching usage', e);
-      }
+      const res = await fetch('/api/usage');
+      if (!res.ok) return;
+      const u = await res.json();
+      setDaily({ used: u.dailyUsed, limit: u.dailyLimit });
+      setMonthly({ used: u.monthlyUsed, limit: u.monthlyLimit });
     })();
   }, []);
 
   async function openBillingPortal() {
-    const r = await fetch('/api/stripe/create-portal-session', {
+    const res = await fetch('/api/stripe/create-portal-session', {
       method: 'POST',
     });
-    if (!r.ok) return alert('Could not open billing portal');
-    const { url } = await r.json();
+    if (!res.ok) {
+      alert('Could not open billing portal');
+      return;
+    }
+    const { url } = await res.json();
     window.location.href = url;
   }
 
@@ -59,7 +58,6 @@ export default function AccountPage() {
         </div>
       </div>
 
-      {/* Business profile form */}
       <form className="card" style={{ marginTop: 16 }}>
         <h2>Business profile</h2>
         <div className="grid-2">
@@ -83,7 +81,6 @@ export default function AccountPage() {
         </div>
       </form>
 
-      {/* Email preferences */}
       <form className="card" style={{ marginTop: 16 }}>
         <h2>Email preferences</h2>
         <label>

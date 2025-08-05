@@ -1,8 +1,6 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import React from 'react';
-
 export default function FaqPage() {
   return (
     <section className="container py-10">

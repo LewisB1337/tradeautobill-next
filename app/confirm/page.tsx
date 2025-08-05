@@ -13,23 +13,20 @@ export default function ConfirmPage() {
   const code = params.get('code');
 
   useEffect(() => {
-    async function finishSignIn() {
+    (async () => {
       if (!code) {
         setStatus('error');
         return;
       }
       const { error } = await supabase.auth.exchangeCodeForSession(code);
-      if (error) {
-        setStatus('error');
-      } else {
-        router.replace('/create');
-      }
-    }
-    finishSignIn();
+      if (error) setStatus('error');
+      else router.replace('/create');
+    })();
   }, [code, supabase, router]);
 
-  if (status === 'error') {
-    return <p style={{ color: 'red' }}>Sign-in failed. Try the link again.</p>;
-  }
-  return <p>Signing you in…</p>;
+  return status === 'error' ? (
+    <p style={{ color: 'red' }}>Sign-in failed. Try the link again.</p>
+  ) : (
+    <p>Signing you in…</p>
+  );
 }
