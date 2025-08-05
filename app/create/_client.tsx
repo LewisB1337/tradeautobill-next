@@ -1,275 +1,57 @@
-// app/create/_client.tsx
-'use client';
-
-import React, { useMemo, useState } from 'react';
-import UsageMeter from '../components/UsageMeter';
-
-type Item = { id: string; description: string; quantity: number; unitPrice: number };
+'use client'
+import React from 'react'
 
 export default function CreateForm() {
-  // Replace these with real hooks/fetches if needed
-  const daily = { used: 12, limit: 50 };
-  const monthly = { used: 15, limit: 200 };
-
-  // Business & Customer
-  const [business, setBusiness] = useState({ name: '', email: '', address: '', vatNumber: '' });
-  const [customer, setCustomer] = useState({ name: '', email: '', address: '' });
-
-  // Line items + VAT
-  const [items, setItems] = useState<Item[]>([
-    { id: crypto.randomUUID(), description: '', quantity: 1, unitPrice: 0 },
-  ]);
-  const [vatRate, setVatRate] = useState<number>(20);
-
-  const currency = 'GBP';
-  const nfMoney = useMemo(
-    () => new Intl.NumberFormat('en-GB', { style: 'currency', currency }),
-    [currency]
-  );
-
-  const subTotal = useMemo(
-    () =>
-      items.reduce(
-        (sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0),
-        0
-      ),
-    [items]
-  );
-  const vatAmount = useMemo(() => subTotal * (vatRate / 100), [subTotal, vatRate]);
-  const grandTotal = useMemo(() => subTotal + vatAmount, [subTotal, vatAmount]);
-
-  function updateItem(id: string, patch: Partial<Item>) {
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-  }
-
-  function addItem() {
-    setItems((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), description: '', quantity: 1, unitPrice: 0 },
-    ]);
-  }
-
-  function removeItem(id: string) {
-    setItems((prev) => (prev.length > 1 ? prev.filter((it) => it.id !== id) : prev));
-  }
+  // … your existing state hooks for business, customer, items, vatRate, subTotal, vatAmount, grandTotal, currency
 
   async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+    e.preventDefault()
+
+    // 1) Build the exact payload shape your API expects
+    const invoiceData = {
+      business,       // { name, email, address, vatNumber }
+      customer,       // { name, email, address }
+      items,          // Array<{ id, description, quantity, unitPrice }>
+      vatRate,        // number
+      totals: {       // { subTotal, vatAmount, grandTotal, currency }
+        subTotal,
+        vatAmount,
+        grandTotal,
+        currency,
+      },
+    }
+
+    // 2) Log it so you can inspect in the browser console
+    console.log('>>> Sending invoice payload:', invoiceData)
+
     try {
       const res = await fetch('/api/invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          business,
-          customer,
-          items,
-          vatRate,
-          totals: { subTotal, vatAmount, grandTotal, currency },
-        }),
-      });
+        body: JSON.stringify(invoiceData),
+      })
+
       if (res.status === 401) {
-        // Shouldn't happen (guard is server‐side), but just in case
-        window.location.href = '/login?from=/create';
-        return;
+        // your existing redirect or auth logic
+        return
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      alert('Invoice submitted');
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+
+      alert('Invoice submitted')
     } catch (err) {
-      console.error(err);
-      alert('Failed to submit invoice');
+      console.error('Failed to submit invoice:', err)
+      alert('Failed to submit invoice')
     }
   }
 
   return (
-    <main className="container py-10">
-      <h1 style={{ marginTop: 0 }}>Create invoice</h1>
-
-      {/* Usage */}
-      <section className="card" style={{ marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Usage</h3>
-        <div className="row" style={{ alignItems: 'stretch' }}>
-          <div style={{ flex: 1 }}>
-            <div className="tiny muted" style={{ marginBottom: 8 }}>Today</div>
-            <UsageMeter daily={daily} monthly={monthly} />
-          </div>
-        </div>
-      </section>
-
-      <form onSubmit={onSubmit} id="invoiceForm">
-        {/* Business & Customer */}
-        <div className="grid-2">
-          <fieldset>
-            <legend>Business</legend>
-            <div style={{ display: 'grid', gap: 12 }}>
-              <input
-                name="businessName"
-                placeholder="Business name"
-                required
-                value={business.name}
-                onChange={(e) => setBusiness({ ...business, name: e.target.value })}
-              />
-              <input
-                name="businessEmail"
-                type="email"
-                placeholder="billing@you.co.uk"
-                required
-                value={business.email}
-                onChange={(e) => setBusiness({ ...business, email: e.target.value })}
-              />
-              <input
-                name="businessAddress"
-                placeholder="Address"
-                value={business.address}
-                onChange={(e) => setBusiness({ ...business, address: e.target.value })}
-              />
-              <input
-                name="vatNumber"
-                placeholder="VAT number (optional)"
-                value={business.vatNumber}
-                onChange={(e) => setBusiness({ ...business, vatNumber: e.target.value })}
-              />
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>Customer</legend>
-            <div style={{ display: 'grid', gap: 12 }}>
-              <input
-                name="customerName"
-                placeholder="Customer name"
-                required
-                value={customer.name}
-                onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
-              />
-              <input
-                name="customerEmail"
-                type="email"
-                placeholder="customer@their.com"
-                required
-                value={customer.email}
-                onChange={(e) => setCustomer({ ...customer, email: e.target.value })}
-              />
-              <input
-                name="customerAddress"
-                placeholder="Address (optional)"
-                value={customer.address}
-                onChange={(e) => setCustomer({ ...customer, address: e.target.value })}
-              />
-            </div>
-          </fieldset>
-        </div>
-
-        {/* Items */}
-        <fieldset>
-          <legend>Items</legend>
-          <table className="data" style={{ width: '100%' }}>
-            <thead>
-              <tr>
-                <th style={{ width: '55%' }}>Description</th>
-                <th className="num" style={{ width: '10%' }}>Qty</th>
-                <th className="num" style={{ width: '20%' }}>Unit price</th>
-                <th className="num" style={{ width: '10%' }}>Line total</th>
-                <th style={{ width: '5%' }} />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it) => {
-                const line = (it.quantity || 0) * (it.unitPrice || 0);
-                return (
-                  <tr key={it.id}>
-                    <td>
-                      <input
-                        placeholder="Description"
-                        value={it.description}
-                        onChange={(e) => updateItem(it.id, { description: e.target.value })}
-                      />
-                    </td>
-                    <td className="num">
-                      <input
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={it.quantity}
-                        onChange={(e) =>
-                          updateItem(it.id, { quantity: Number(e.target.value) })
-                        }
-                      />
-                    </td>
-                    <td className="num">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={it.unitPrice}
-                        onChange={(e) =>
-                          updateItem(it.id, { unitPrice: Number(e.target.value) })
-                        }
-                      />
-                    </td>
-                    <td className="num">{nfMoney.format(line)}</td>
-                    <td className="num">
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => removeItem(it.id)}
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          <div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}>
-            <button type="button" className="btn btn-secondary" onClick={addItem}>
-              + Add item
-            </button>
-            <div className="card" style={{ minWidth: 280 }}>
-              <div className="row" style={{ justifyContent: 'space-between' }}>
-                <span>Subtotal</span>
-                <strong>{nfMoney.format(subTotal)}</strong>
-              </div>
-              <div className="row" style={{ justifyContent: 'space-between', marginTop: 6 }}>  
-                <label htmlFor="vat">VAT (%)</label>
-                <input
-                  id="vat"
-                  type="number"
-                  min={0}
-                  step="0.5"
-                  value={vatRate}
-                  onChange={(e) => setVatRate(Number(e.target.value))}
-                  style={{ width: 90 }}
-                />
-              </div>
-              <div className="row" style={{ justifyContent: 'space-between', marginTop: 6 }}>
-                <span>VAT amount</span>
-                <strong>{nfMoney.format(vatAmount)}</strong>
-              </div>
-              <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '8px 0' }} />
-              <div className="row" style={{ justifyContent: 'space-between' }}>
-                <span>Total</span>
-                <strong>{nfMoney.format(grandTotal)}</strong>
-              </div>
-            </div>
-          </div>
-        </fieldset>
-
-        {/* Actions */}
-        <div className="row" style={{ marginTop: 12 }}>
-          <button type="submit" className="btn btn-primary">Send invoice</button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => window.print()}
-            title="Print / Save as PDF"
-          >
-            Print
-          </button>
-        </div>
-      </form>
-    </main>
-  );
+    <form onSubmit={onSubmit}>
+      {/* … your existing form inputs and “Submit Invoice” button … */}
+      <button type="submit">Submit Invoice</button>
+    </form>
+  )
 }
