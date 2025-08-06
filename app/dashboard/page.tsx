@@ -278,7 +278,10 @@ function downloadCsv(rows: Invoice[]) {
     new Date(r.created_at).toISOString(),
     r.pdf_url ? 'Ready' : 'Pending',
     r.pdf_url ?? ''
-  ].map(cell => `"${String(cell).replaceAll('"', '""')}"`).join(','))
+  ]
+  // ↓ replaceAll removed; regex works on older lib targets
+  .map(cell => `"${String(cell).replace(/"/g, '""')}"`)
+  .join(','))
   const csv = [header.join(','), ...lines].join('\n')
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
