@@ -1,4 +1,3 @@
-// app/components/Header.tsx
 'use client';
 
 import Link from 'next/link';
@@ -8,7 +7,6 @@ export default function Header() {
   const path = usePathname();
 
   const isActive = (href: string) => path === href;
-
   const linkClass = (href: string) =>
     `btn${isActive(href) ? ' btn-active' : ''}`;
 
@@ -20,6 +18,9 @@ export default function Header() {
         </Link>
       </div>
       <div className="row" style={{ gap: '0.5rem' }}>
+        <Link href="/" className={linkClass('/')}>
+          Home
+        </Link>
         <Link href="/pricing" className={linkClass('/pricing')}>
           Pricing
         </Link>
