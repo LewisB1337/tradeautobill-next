@@ -1,7 +1,7 @@
 // app/api/usage/route.ts
 import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 export const runtime = 'nodejs';
@@ -13,12 +13,15 @@ function json(data: any, status = 200) {
   return NextResponse.json(data, { status });
 }
 
+// ✅ use a permissive client type so generics don’t blow up at build time
+type AnySupabase = SupabaseClient<any, any, any>;
+
 async function countUsage(
-  admin: ReturnType<typeof createClient>,
+  admin: AnySupabase,
   userId: string,
   sinceISO: string
 ) {
-  // Try column "user" (quoted in SQL) then fallback to "user_id"
+  // Try column "user" then fallback to "user_id"
   let { count, error } = await admin
     .from('usage')
     .select('id', { head: true, count: 'exact' })
@@ -26,7 +29,6 @@ async function countUsage(
     .gte('created_at', sinceISO);
 
   if (error) {
-    // Fallback to user_id
     const r2 = await admin
       .from('usage')
       .select('id', { head: true, count: 'exact' })
@@ -58,7 +60,7 @@ export async function GET() {
     if (!user)   return json({ ok: false, stage, error: 'Unauthorized' }, 401);
 
     stage = 'admin.connect';
-    const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+    const admin: AnySupabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
     stage = 'query.windows';
     const now = Date.now();
@@ -87,7 +89,6 @@ export async function GET() {
       tier,
     });
   } catch (e: any) {
-    // Properly serialize the error
     const err = typeof e === 'object' ? JSON.stringify(e) : String(e);
     return json({ ok: false, stage, error: err }, 500);
   }
