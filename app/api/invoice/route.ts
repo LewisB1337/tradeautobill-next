@@ -1,83 +1,65 @@
 // app/api/invoice/route.ts
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'node:crypto'
 
-// If you call an upstream like n8n, set this in Netlify env
+export const runtime = 'nodejs'
+
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL
+const RAW_SECRET = process.env.N8N_SIGNING_SECRET || ''
+const SIGNING_SECRET = RAW_SECRET.trim() // kill whitespace
 
-export const runtime = 'nodejs' // ensure Node runtime on Netlify
+function hmac(raw: string) {
+  return crypto.createHmac('sha256', SIGNING_SECRET).update(raw).digest('hex')
+}
 
 export async function POST(req: NextRequest) {
-  let body: any
-
-  // --- Parse body
-  try {
-    body = await req.json()
-  } catch (err) {
-    console.error('❌ Invalid JSON:', err)
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  if (!N8N_WEBHOOK_URL) {
+    return NextResponse.json({ error: 'Server not configured: N8N_WEBHOOK_URL is missing' }, { status: 500 })
+  }
+  if (!SIGNING_SECRET) {
+    return NextResponse.json({ error: 'Server not configured: N8N_SIGNING_SECRET is missing' }, { status: 500 })
   }
 
-  console.log('<<< /api/invoice received payload:', JSON.stringify(body))
+  let body: any
+  try { body = await req.json() }
+  catch (e) { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) }
 
-  // --- Minimal validation (matches what your UI now sends)
-  if (!body?.customerEmail || !Array.isArray(body.items)) {
-    console.error('❌ Invalid payload shape:', {
-      hasCustomerEmail: !!body?.customerEmail,
-      itemsIsArray: Array.isArray(body.items),
-    })
+  // minimal validation
+  if (!body?.customerEmail || !Array.isArray(body?.items)) {
     return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
   }
 
-  // Optional: normalize item numbers (defensive)
-  body.items = body.items.map((it: any) => ({
-    description: it.description ?? '',
-    quantity: Number(it.quantity) || 0,
-    unitPrice: Number(it.unitPrice) || 0,
-    id: it.id ?? null,
-  }))
-
-  // --- Call upstream (if configured)
-  if (!N8N_WEBHOOK_URL) {
-    console.error('❌ Missing env N8N_WEBHOOK_URL')
-    return NextResponse.json(
-      { error: 'Server not configured: N8N_WEBHOOK_URL is missing' },
-      { status: 500 }
-    )
-  }
+  const raw = JSON.stringify(body)
+  const sig = hmac(raw)
+  console.log('HMAC sig (first 12):', sig.slice(0, 12), ' bodyLen:', raw.length)
 
   try {
-    const upstreamRes = await fetch(N8N_WEBHOOK_URL, {
+    const upstream = await fetch(N8N_WEBHOOK_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json',
+        // send BOTH casings to satisfy any header normalization
+        'x-hmac-signature': sig,
+        'X-Hmac-Signature': sig,
+      },
+      body: raw, // sign EXACTLY what you send
     })
-
-    const text = await upstreamRes.text()
-
-    if (!upstreamRes.ok) {
-      console.error('❌ Upstream error', upstreamRes.status, text.slice(0, 500))
-      return NextResponse.json(
-        { error: 'Upstream error', status: upstreamRes.status, detail: text },
-        { status: 502 }
-      )
+    const text = await upstream.text()
+    if (!upstream.ok) {
+      console.error('Upstream error', upstream.status, text.slice(0, 400))
+      return NextResponse.json({ error: 'Upstream error', status: upstream.status, detail: text }, { status: 502 })
     }
-
-    console.log('✅ Upstream success', text.slice(0, 500))
-    // pass upstream JSON/text back to client
-    try {
-      return NextResponse.json(JSON.parse(text))
-    } catch {
-      return new NextResponse(text, { status: 200 })
-    }
-  } catch (err: any) {
-    console.error('❌ Exception calling upstream:', err?.message || err)
-    return NextResponse.json(
-      { error: 'Server exception', message: String(err) },
-      { status: 500 }
-    )
+    try { return NextResponse.json(JSON.parse(text)) } catch { return new NextResponse(text, { status: 200 }) }
+  } catch (e: any) {
+    console.error('Exception calling n8n:', e?.message || e)
+    return NextResponse.json({ error: 'Server exception', message: String(e) }, { status: 500 })
   }
 }
 
 export async function GET() {
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({
+    hasN8N: !!N8N_WEBHOOK_URL,
+    hasSignSecret: !!SIGNING_SECRET,
+    secretLen: SIGNING_SECRET.length || 0,
+  })
 }
