@@ -14,44 +14,48 @@ function json(data: any, status = 200) {
 }
 
 export async function GET() {
+  let stage = 'start';
   try {
+    stage = 'env';
     if (!SUPABASE_URL || !SERVICE_KEY) {
-      return json({ error: 'Server not configured: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing', stage: 'env' }, 500);
+      return json({ ok: false, stage, error: 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing' }, 500);
     }
 
+    stage = 'auth.getUser';
     const userClient = createRouteHandlerClient({ cookies });
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
-    if (authError) return json({ error: authError.message, stage: 'auth' }, 500);
-    if (!user) return json({ error: 'Unauthorized', stage: 'auth' }, 401);
+    const { data: { user }, error: authErr } = await userClient.auth.getUser();
+    if (authErr) return json({ ok: false, stage, error: authErr.message }, 500);
+    if (!user)   return json({ ok: false, stage, error: 'Unauthorized' }, 401);
 
+    stage = 'admin.connect';
     const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
+    stage = 'query.windows';
     const now = Date.now();
     const dayAgo   = new Date(now - 24 * 60 * 60 * 1000).toISOString();
     const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
 
+    stage = 'query.daily';
     const { count: dailyCount, error: dailyErr } = await admin
-      .from('usage')
-      .select('id', { head: true, count: 'exact' })
-      .eq('user', user.id)
-      .gte('created_at', dayAgo);
+      .from('usage').select('id', { head: true, count: 'exact' })
+      .eq('user', user.id).gte('created_at', dayAgo);
+    if (dailyErr) return json({ ok: false, stage, error: dailyErr.message }, 500);
 
-    if (dailyErr) return json({ error: dailyErr.message, stage: 'daily' }, 500);
-
+    stage = 'query.monthly';
     const { count: monthlyCount, error: monthlyErr } = await admin
-      .from('usage')
-      .select('id', { head: true, count: 'exact' })
-      .eq('user', user.id)
-      .gte('created_at', monthAgo);
+      .from('usage').select('id', { head: true, count: 'exact' })
+      .eq('user', user.id).gte('created_at', monthAgo);
+    if (monthlyErr) return json({ ok: false, stage, error: monthlyErr.message }, 500);
 
-    if (monthlyErr) return json({ error: monthlyErr.message, stage: 'monthly' }, 500);
-
+    stage = 'tier';
     const tier = (user.app_metadata?.tier as string) || 'free';
     let daily_limit = 3, monthly_limit = 10;
-    if (tier === 'standard') { daily_limit = 25; monthly_limit = 200; }
+    if (tier === 'standard') { daily_limit = 25;  monthly_limit = 200; }
     if (tier === 'pro')      { daily_limit = 100; monthly_limit = 1000; }
 
     return json({
+      ok: true,
+      stage: 'done',
       daily_count: dailyCount ?? 0,
       monthly_count: monthlyCount ?? 0,
       daily_limit,
@@ -59,6 +63,6 @@ export async function GET() {
       tier,
     });
   } catch (e: any) {
-    return json({ error: e?.message || 'Internal error', stage: 'catch' }, 500);
+    return json({ ok: false, stage, error: e?.message || String(e) }, 500);
   }
 }
