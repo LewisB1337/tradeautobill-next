@@ -1,4 +1,5 @@
 // app/api/invoice/route.ts
+
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
@@ -24,32 +25,30 @@ function hmacHex(secret: string, body: string) {
   return crypto.createHmac('sha256', secret).update(body).digest('hex');
 }
 
-// Normalize the incoming payload into a consistent shape
 function normalizePayload(raw: any) {
-  const business     = raw.business  || {};
-  const customer     = raw.customer  || {};
+  const business      = raw.business  || {};
+  const customer      = raw.customer  || {};
   const customerEmail = raw.customerEmail
     || customer.email
     || '';
-  const itemsIn      = Array.isArray(raw.items) ? raw.items : [];
-  const items        = itemsIn.map((it: any) => ({
+  const itemsIn       = Array.isArray(raw.items) ? raw.items : [];
+  const items         = itemsIn.map((it: any) => ({
     description: String(it.description ?? ''),
     quantity:    Number(it.quantity ?? it.qty ?? 0),
     unitPrice:   Number(it.unitPrice ?? it.price ?? 0),
     vatRate:     it.vatRate !== undefined
-                  ? Number(it.vatRate)
-                  : undefined,
+                    ? Number(it.vatRate)
+                    : undefined,
   }));
-  const totals       = raw.totals || {};
-  const meta         = raw.meta   || {};
-  const vatRate      = raw.vatRate !== undefined
-                  ? Number(raw.vatRate)
-                  : undefined;
+  const totals        = raw.totals || {};
+  const meta          = raw.meta   || {};
+  const vatRate       = raw.vatRate !== undefined
+                    ? Number(raw.vatRate)
+                    : undefined;
 
   return { business, customer, customerEmail, items, vatRate, totals, meta };
 }
 
-// Count rows in `usage` table since a given time, tolerating `user` vs `user_id`
 async function countUsage(admin: AnySupabase, userId: string, sinceISO: string) {
   let { count, error } = await admin
     .from('usage')
@@ -74,7 +73,6 @@ async function countUsage(admin: AnySupabase, userId: string, sinceISO: string) 
   return count ?? 0;
 }
 
-// Gather daily & monthly counts
 async function getUsage(admin: AnySupabase, userId: string) {
   const now      = Date.now();
   const dayAgo   = new Date(now - 24 * 60 * 60 * 1000).toISOString();
@@ -84,18 +82,17 @@ async function getUsage(admin: AnySupabase, userId: string) {
   return { daily, monthly };
 }
 
-// Tier‐based limits
 function limitsForTier(tier: string) {
   if (tier === 'standard') return { daily: 25,  monthly: 200  };
   if (tier === 'pro')      return { daily: 100, monthly: 1000 };
   return { daily: 3, monthly: 10 };
 }
 
-// ── Quick whoami (optional) ───────────────────────────────────────────────────
+// ── Whoami (optional) ───────────────────────────────────────────────────────────
 export async function GET() {
   try {
     const userClient = createRouteHandlerClient({ cookies });
-    const { data: { user } } = await userClient.auth.getUser();
+    const { data:{ user } } = await userClient.auth.getUser();
     if (!user) return json({ ok: false, error: 'Unauthorized' }, 401);
     const tier = (user.app_metadata?.tier as string) || 'free';
     return json({ ok: true, user: { id: user.id, tier } });
@@ -116,7 +113,7 @@ export async function POST(req: Request) {
     // 2) Auth
     stage = 'auth.getUser';
     const userClient = createRouteHandlerClient({ cookies });
-    const { data: { user }, error: authErr } = await userClient.auth.getUser();
+    const { data:{ user }, error: authErr } = await userClient.auth.getUser();
     if (authErr) return json({ ok: false, stage, error: authErr.message }, 500);
     if (!user)   return json({ ok: false, stage, error: 'Unauthorized' }, 401);
 
@@ -147,11 +144,11 @@ export async function POST(req: Request) {
     if (daily   >= lim.daily)   return json({ ok: false, stage, error: 'Daily limit reached' }, 429);
     if (monthly >= lim.monthly) return json({ ok: false, stage, error: 'Monthly limit reached' }, 429);
 
-    // 6) Record usage
+    // 6) Record usage (drop `kind` since your table has no such column)
     stage = 'usage.insert';
-    let insErr = (await admin.from('usage').insert({ user: user.id, kind: 'invoice_send' })).error;
+    let insErr = (await admin.from('usage').insert({ user: user.id })).error;
     if (insErr) {
-      insErr = (await admin.from('usage').insert({ user_id: user.id, kind: 'invoice_send' })).error;
+      insErr = (await admin.from('usage').insert({ user_id: user.id })).error;
     }
     if (insErr) {
       return json({ ok: false, stage, error: `usage insert failed: ${JSON.stringify(insErr)}` }, 500);
@@ -159,11 +156,7 @@ export async function POST(req: Request) {
 
     // 7) Prepare n8n payload & sign
     stage = 'n8n.prepare';
-    const invoice = {
-      ...norm,
-      userId: user.id,
-      tier,
-    };
+    const invoice = { ...norm, userId: user.id, tier };
     const outBody   = JSON.stringify({ invoice });
     const signature = hmacHex(SIGN_SECRET, outBody);
 
@@ -186,18 +179,15 @@ export async function POST(req: Request) {
 
     // 9) Persist invoice record for history
     stage = 'db.insertInvoice';
-    const invRec = {
+    await admin.from('invoices').insert({
       user_id:     user.id,
       invoice_num: norm.meta.invoiceNumber || '',
       customer:    norm.customer,
       business:    norm.business,
       totals:      norm.totals,
-    };
-    const { error: invErr } = await admin.from('invoices').insert(invRec);
-    if (invErr) {
-      console.error('[invoice] history insert error', invErr);
-      // don’t block the flow—just log it
-    }
+    }).then(({ error: invErr }) => {
+      if (invErr) console.error('[invoice] history insert error', invErr);
+    });
 
     // 10) Done
     stage = 'done';
