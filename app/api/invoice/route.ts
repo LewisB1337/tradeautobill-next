@@ -22,10 +22,11 @@ function hmacHex(secret: string, body: string) {
   return crypto.createHmac('sha256', secret).update(body).digest('hex')
 }
 
-// Normalize incoming payload
+// Normalize incoming payload and compute totals
 function normalizePayload(raw: any) {
   const business      = raw?.business ?? {}
   const customer      = raw?.customer ?? {}
+  const customerEmail = raw?.customerEmail ?? raw?.customer?.email ?? ''
   const itemsIn       = Array.isArray(raw?.items) ? raw.items : []
   const items         = itemsIn.map((it: any) => ({
     description: String(it?.description ?? ''),
@@ -38,16 +39,25 @@ function normalizePayload(raw: any) {
   const tax      = +(subtotal * (taxRate / 100)).toFixed(2)
   const total    = +(subtotal + tax).toFixed(2)
 
+  // Accept common field names for the invoice number from /create
+  const invoiceNumber =
+    raw?.meta?.invoiceNumber ??
+    raw?.invoiceNumber ??
+    raw?.invoice_num ??
+    raw?.invoiceId ??
+    null
+
   return {
     business,
     customer,
+    customerEmail,
     items,
+    totals: { subtotal, tax, total },
     meta: {
-      invoiceNumber: raw?.meta?.invoiceNumber ?? null,
+      invoiceNumber,
       notes: raw?.meta?.notes ?? '',
       taxRate,
     },
-    totals: { subtotal, tax, total },
   }
 }
 
@@ -62,12 +72,16 @@ export async function POST(req: Request) {
     if (authErr) return json({ ok: false, stage, error: authErr.message }, 500)
     if (!user)   return json({ ok: false, stage, error: 'Unauthorized' }, 401)
 
-    // 2) Parse and normalize input
+    // 2) Parse and normalize
     stage = 'parse'
-    const raw = await req.json().catch(() => ({}))
+    const raw  = await req.json().catch(() => ({}))
     const norm = normalizePayload(raw)
 
-    // 3) Kick n8n workflow (optional)
+    if (!norm.meta.invoiceNumber || String(norm.meta.invoiceNumber).trim() === '') {
+      return json({ ok: false, stage, error: 'invoiceNumber is required' }, 400)
+    }
+
+    // 3) Optionally call n8n (to generate PDF/send email, etc.)
     stage = 'n8n'
     let n8nJson: any = null
     let n8nText = ''
@@ -76,11 +90,7 @@ export async function POST(req: Request) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (SIGN_SECRET) headers['x-signature'] = hmacHex(SIGN_SECRET, outBody)
 
-      const res = await fetch(N8N_URL, {
-        method: 'POST',
-        headers,
-        body: outBody,
-      })
+      const res = await fetch(N8N_URL, { method: 'POST', headers, body: outBody })
       n8nText = await res.text().catch(() => '')
       try { n8nJson = n8nText ? JSON.parse(n8nText) : null } catch {}
       if (!res.ok) {
@@ -88,20 +98,24 @@ export async function POST(req: Request) {
       }
     }
 
-    // 4) Persist invoice record (minimal schema)
+    // 4) Persist minimal invoice record + new fields
     stage = 'db.insertInvoice'
-    const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+    const admin  = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
     const pdfUrl = n8nJson?.pdfUrl ?? null
 
     const invRec = {
-      user_id: user.id,
-      pdf_url: pdfUrl, // only columns that exist
-      // created_at is DB default
+      user_id:        user.id,
+      pdf_url:        pdfUrl,
+      invoice_num:    String(norm.meta.invoiceNumber),
+      customer_email: norm.customerEmail || null,
+      total:          Number(norm.totals.total || 0),
+      // created_at is defaulted by DB
     }
 
     const { error: invErr } = await admin.from('invoices').insert(invRec)
     if (invErr) {
-      console.error('[invoice] history insert error', invErr)
+      // We won’t fail the whole request; log for diagnosis
+      console.error('[invoice] insert error', invErr)
     }
 
     // 5) Done
@@ -109,10 +123,17 @@ export async function POST(req: Request) {
     return json({
       ok: true,
       stage,
-      jobId: n8nJson?.jobId ?? null,
+      jobId:  n8nJson?.jobId ?? null,
       pdfUrl: pdfUrl ?? null,
-      // FIX: add parens when mixing ?? with ||
-      n8n: n8nJson ?? (n8nText || null),
+      // keep the raw payload for debugging if needed
+      n8n:    n8nJson ?? (n8nText || null), // parens to avoid ?? with ||
+      invoice: {
+        id: String(norm.meta.invoiceNumber), // <- ID equals INV number (as requested)
+        email: norm.customerEmail || null,
+        total: Number(norm.totals.total || 0),
+        created_at: new Date().toISOString(), // immediate feedback; DB time may differ slightly
+        pdf_url: pdfUrl,
+      },
     }, 200)
 
   } catch (e: any) {
