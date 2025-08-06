@@ -1,55 +1,27 @@
 // app/api/usage/route.ts
-import { NextResponse } from 'next/server'
-import { getUserFromRequest } from '@/lib/auth'
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { getTierForUser } from '@/lib/tiers'
+import { NextResponse } from 'next/server';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
-type Usage = { dailyUsed: number; dailyLimit: number | null; monthlyUsed: number; monthlyLimit: number | null; tier: string }
+export const runtime = 'nodejs';
 
 export async function GET() {
-  const { user } = await getUserFromRequest()
-  // Unauthenticated users count as free with zero usage
-  const userId = user?.id ?? null
-
-  // 1) Determine tier
-  const tier = userId ? await getTierForUser(userId) : 'free'
-
-  // 2) Map tier → limits
-  const LIMITS: Record<string, { daily: number | null; monthly: number | null }> = {
-    free:     { daily: 3,    monthly: 10 },
-    standard: { daily: 50,   monthly: 200 },
-    pro:      { daily: null, monthly: null }, // unlimited
-  }
-  const { daily: dailyLimit, monthly: monthlyLimit } = LIMITS[tier] ?? LIMITS.free
-
-  // 3) Count usage
-  let dailyUsed = 0, monthlyUsed = 0
-  if (userId) {
-    const sinceDay = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    const today = await supabaseAdmin
-      .from('usage')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', sinceDay)
-      .eq('user_id', userId)
-    if (!today.error) dailyUsed = today.count ?? 0
-
-    const monthStart = new Date()
-    monthStart.setDate(1)
-    monthStart.setHours(0, 0, 0, 0)
-    const thisMonth = await supabaseAdmin
-      .from('usage')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', monthStart.toISOString())
-      .eq('user_id', userId)
-    if (!thisMonth.error) monthlyUsed = thisMonth.count ?? 0
+  // 1) Auth
+  const supabase = createRouteHandlerClient({ cookies });
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const result: Usage = {
-    dailyUsed,
-    dailyLimit,
-    monthlyUsed,
-    monthlyLimit,
-    tier,
+  // 2) Call your Postgres RPC `get_usage_counts(p_user)`
+  //    It should return { daily_count, monthly_count, daily_limit, monthly_limit }
+  const { data, error: rpcError } = await supabase
+    .rpc('get_usage_counts', { p_user: user.id });
+
+  if (rpcError) {
+    console.error('Usage RPC error', rpcError);
+    return NextResponse.json({ error: rpcError.message }, { status: 500 });
   }
-  return NextResponse.json(result)
+
+  return NextResponse.json(data);
 }
