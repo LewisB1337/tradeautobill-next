@@ -5,7 +5,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 
 export const runtime = 'nodejs'
 
-// Set your limits here
+// Per-tier limits
 const PLAN_LIMITS: Record<string, { daily: number | null; monthly: number | null }> = {
   Free:    { daily: 3,  monthly: 10 },
   Starter: { daily: 20, monthly: 500 },
@@ -35,22 +35,23 @@ export async function GET() {
     if (authErr) return NextResponse.json({ ok: false, error: authErr.message }, { status: 500 })
     if (!user)   return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
-    // 1) Try profiles.tier first (explicit override)
+    // ---- 1) profiles.tier (ONLY) ----
     let tier: string | null = null
     let renewsAt: string | null = null
 
-    const { data: profile } = await sb
+    const { data: profile, error: pErr } = await sb
       .from('profiles')
-      .select('tier, renews_at')
+      .select('tier')                // do NOT select renews_at (it doesn't exist)
       .eq('id', user.id)
       .maybeSingle()
 
-    if (profile?.tier) {
-      tier = profile.tier
-      renewsAt = profile.renews_at ?? null
+    if (pErr && pErr.code !== 'PGRST116') {
+      // ignore "no rows" type errors; only bail on real errors
+      return NextResponse.json({ ok: false, error: pErr.message }, { status: 500 })
     }
+    if (profile?.tier) tier = profile.tier
 
-    // 2) If no explicit tier, infer from Stripe subscription → price → product
+    // ---- 2) If no explicit tier, infer from Stripe subscription → price → product ----
     if (!tier) {
       const { data: sub } = await sb
         .from('subscriptions')
@@ -64,7 +65,6 @@ export async function GET() {
       if (sub) {
         renewsAt = sub.current_period_end ?? null
 
-        // fetch price
         let lookup_key: string | null = null
         let nickname:   string | null = null
         let product_id: string | null = null
@@ -81,7 +81,6 @@ export async function GET() {
           product_id = price?.product_id ?? null
         }
 
-        // fetch product name
         let product_name: string | null = null
         if (product_id) {
           const { data: product } = await sb
@@ -92,7 +91,6 @@ export async function GET() {
           product_name = product?.name ?? null
         }
 
-        // decide tier
         tier =
           mapToTier(lookup_key) ||
           mapToTier(nickname)   ||
@@ -101,34 +99,33 @@ export async function GET() {
       }
     }
 
-    if (!tier) tier = 'Free' // final fallback
+    if (!tier) tier = 'Free'
 
-    // 3) Usage counts from invoices (UTC window)
+    // ---- 3) Usage (UTC) ----
     const todayStart = startOfUTCDay()
     const monthStart = startOfUTCMonth()
+
     const { count: countToday,  error: ctErr } = await sb
-      .from('invoices').select('id', { head: true, count: 'exact' })
+      .from('invoices')
+      .select('id', { head: true, count: 'exact' })
       .eq('user_id', user.id)
       .gte('created_at', todayStart.toISOString())
     if (ctErr) return NextResponse.json({ ok: false, error: ctErr.message }, { status: 500 })
 
     const { count: countMonth, error: cmErr } = await sb
-      .from('invoices').select('id', { head: true, count: 'exact' })
+      .from('invoices')
+      .select('id', { head: true, count: 'exact' })
       .eq('user_id', user.id)
       .gte('created_at', monthStart.toISOString())
     if (cmErr) return NextResponse.json({ ok: false, error: cmErr.message }, { status: 500 })
 
     const limits = PLAN_LIMITS[tier] ?? PLAN_LIMITS.Free
     const usage = {
-      today: {  count: countToday  ?? 0, limit: limits.daily   },
-      month: {  count: countMonth  ?? 0, limit: limits.monthly },
+      today: { count: countToday ?? 0,  limit: limits.daily },
+      month: { count: countMonth ?? 0,  limit: limits.monthly },
     }
 
-    return NextResponse.json({
-      ok: true,
-      plan: { tier, renewsAt },
-      usage,
-    })
+    return NextResponse.json({ ok: true, plan: { tier, renewsAt }, usage })
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 })
   }
