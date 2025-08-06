@@ -4,73 +4,101 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import UsageMeter from '../components/UsageMeter';
 
-type Item = { id: string; description: string; quantity: number; unitPrice: number };
+type Item = {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  vatRate: number;
+};
 
 export default function CreateForm() {
-  // Real usage state
-  const [daily, setDaily]     = useState({ used: 0, limit: 0 });
-  const [monthly, setMonthly] = useState({ used: 0, limit: 0 });
+  // ── Usage & Tier ────────────────────────────────────────────────────────────
+  const [daily, setDaily]       = useState({ used: 0, limit: 0 });
+  const [monthly, setMonthly]   = useState({ used: 0, limit: 0 });
+  const [tier, setTier]         = useState('Free');
 
-  // Form state
-  const [business, setBusiness] = useState({ name: '', email: '', address: '', vatNumber: '' });
-  const [customer, setCustomer] = useState({ name: '', email: '', address: '' });
-  const [items, setItems]       = useState<Item[]>([
-    { id: crypto.randomUUID(), description: '', quantity: 1, unitPrice: 0 },
-  ]);
-  const [vatRate, setVatRate]   = useState(20);
-
-  // UI state
-  const [submitting, setSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg]     = useState<string | null>(null);
-
-  // Fetch real usage on mount
   useEffect(() => {
-    fetch('/api/usage', { credentials: 'include' })
-      .then(async res => {
-        if (!res.ok) throw new Error('Unauthorized');
-        return res.json();
-      })
-      .then(data => {
-        setDaily({ used: data.daily_count, limit: data.daily_limit });
-        setMonthly({ used: data.monthly_count, limit: data.monthly_limit });
-      })
-      .catch(err => console.error('Usage fetch failed', err));
+    // Fetch usage + tier in parallel
+    Promise.all([
+      fetch('/api/usage', { credentials: 'include' }).then(r => r.ok ? r.json() : Promise.reject()),
+      fetch('/api/invoice', { credentials: 'include' }).then(r => r.ok ? r.json() : Promise.reject())
+    ]).then(([u, inv]) => {
+      setDaily({ used: u.daily_count, limit: u.daily_limit });
+      setMonthly({ used: u.monthly_count, limit: u.monthly_limit });
+      if (inv.user?.tier) setTier(inv.user.tier.charAt(0).toUpperCase() + inv.user.tier.slice(1));
+    }).catch(() => {
+      // unauthorized or error → leave zeros
+    });
   }, []);
 
-  // Totals formatting
+  // ── Form State ──────────────────────────────────────────────────────────────
+  const [businessName,    setBusinessName]    = useState('');
+  const [businessEmail,   setBusinessEmail]   = useState('');
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [vatNumber,       setVatNumber]       = useState('');
+
+  const [customerName,    setCustomerName]    = useState('');
+  const [customerEmail,   setCustomerEmail]   = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
+
+  const [invoiceNumber,   setInvoiceNumber]   = useState('');
+  const [invoiceDate,     setInvoiceDate]     = useState('');
+  const [dueDate,         setDueDate]         = useState('');
+  const [poNumber,        setPoNumber]        = useState('');
+  const [notes,           setNotes]           = useState('');
+
+  const [items, setItems] = useState<Item[]>([
+    { id: crypto.randomUUID(), description: '', quantity: 1, unitPrice: 0, vatRate: 20 },
+  ]);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg,   setErrorMsg]   = useState<string | null>(null);
+
+  // ── Totals ─────────────────────────────────────────────────────────────────
   const currency = 'GBP';
   const nfMoney = useMemo(
     () => new Intl.NumberFormat('en-GB', { style: 'currency', currency }),
     [currency]
   );
 
-  const subTotal  = useMemo(() => items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0), [items]);
-  const vatAmount = useMemo(() => subTotal * (vatRate / 100), [subTotal, vatRate]);
-  const grandTotal= useMemo(() => subTotal + vatAmount, [subTotal, vatAmount]);
+  const subTotal  = useMemo(
+    () => items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0),
+    [items]
+  );
+  const vatTotal  = useMemo(
+    () => items.reduce((sum, it) => sum + it.quantity * it.unitPrice * (it.vatRate/100), 0),
+    [items]
+  );
+  const grandTotal = subTotal + vatTotal;
 
-  // Item helpers
+  // ── Item Helpers ───────────────────────────────────────────────────────────
   function updateItem(id: string, patch: Partial<Item>) {
     setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
   }
   function addItem() {
-    setItems(prev => [...prev, { id: crypto.randomUUID(), description: '', quantity: 1, unitPrice: 0 }]);
+    setItems(prev => [...prev, { id: crypto.randomUUID(), description: '', quantity: 1, unitPrice: 0, vatRate }]);
   }
   function removeItem(id: string) {
-    setItems(prev => (prev.length > 1 ? prev.filter(it => it.id !== id) : prev));
+    setItems(prev => prev.length > 1 ? prev.filter(it => it.id !== id) : prev);
   }
 
-  // Submit handler
+  // ── Submit Handler ─────────────────────────────────────────────────────────
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setErrorMsg(null);
 
     const payload = {
-      business,
-      customer,
+      business: { name: businessName, email: businessEmail, address: businessAddress, vatNumber },
+      customer: { name: customerName, email: customerEmail, address: customerAddress },
+      invoiceNumber,
+      invoiceDate,
+      dueDate,
+      poNumber,
+      notes,
       items,
-      vatRate,
-      totals: { subTotal, vatAmount, grandTotal, currency }
+      totals: { subTotal, vatTotal, grandTotal, currency },
     };
 
     try {
@@ -97,51 +125,63 @@ export default function CreateForm() {
       }
 
       alert('Invoice sent! Check your email.');
-    } catch (err) {
-      console.error(err);
+    } catch {
       setErrorMsg('Network error. Please try again.');
     } finally {
       setSubmitting(false);
     }
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <main className="container py-10">
-      <h1>Create invoice</h1>
+      <header className="row" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+        <h1 style={{ margin: 0 }}>Create invoice</h1>
+        <span className="pill">{tier}</span>
+      </header>
 
-      {/* Usage meter */}
-      <section className="card mb-6">
-        <h3>Usage</h3>
-        <UsageMeter daily={daily} monthly={monthly} />
-      </section>
+      <div className="meter" style={{ margin: '16px 0' }}>
+        <span className="tiny">
+          Today: <strong>{daily.used}</strong>/<span>{daily.limit}</span>
+        </span>
+        <div className="bar" style={{ flex: 1, margin: '0 12px' }}>
+          <span style={{ width: daily.limit ? `${(daily.used / daily.limit) * 100}%` : '0%' }} />
+        </div>
+        <span className="tiny">
+          Month: <strong>{monthly.used}</strong>/<span>{monthly.limit}</span>
+        </span>
+        <div className="bar" style={{ flex: 1, margin: '0 12px' }}>
+          <span style={{ width: monthly.limit ? `${(monthly.used / monthly.limit) * 100}%` : '0%' }} />
+        </div>
+      </div>
 
-      <form onSubmit={onSubmit} className="space-y-6">
+      <form id="invoiceForm" onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         {/* Business & Customer */}
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid-2">
           <fieldset>
             <legend>Business</legend>
             <input
               placeholder="Business name"
               required
-              value={business.name}
-              onChange={e => setBusiness({ ...business, name: e.target.value })}
+              value={businessName}
+              onChange={e => setBusinessName(e.target.value)}
             />
             <input
               type="email"
-              placeholder="Business email"
+              placeholder="billing@you.co.uk"
               required
-              value={business.email}
-              onChange={e => setBusiness({ ...business, email: e.target.value })}
+              value={businessEmail}
+              onChange={e => setBusinessEmail(e.target.value)}
             />
             <input
               placeholder="Address"
-              value={business.address}
-              onChange={e => setBusiness({ ...business, address: e.target.value })}
+              value={businessAddress}
+              onChange={e => setBusinessAddress(e.target.value)}
             />
             <input
               placeholder="VAT number (optional)"
-              value={business.vatNumber}
-              onChange={e => setBusiness({ ...business, vatNumber: e.target.value })}
+              value={vatNumber}
+              onChange={e => setVatNumber(e.target.value)}
             />
           </fieldset>
 
@@ -150,40 +190,77 @@ export default function CreateForm() {
             <input
               placeholder="Customer name"
               required
-              value={customer.name}
-              onChange={e => setCustomer({ ...customer, name: e.target.value })}
+              value={customerName}
+              onChange={e => setCustomerName(e.target.value)}
             />
             <input
               type="email"
-              placeholder="Customer email"
+              placeholder="customer@their.com"
               required
-              value={customer.email}
-              onChange={e => setCustomer({ ...customer, email: e.target.value })}
+              value={customerEmail}
+              onChange={e => setCustomerEmail(e.target.value)}
             />
             <input
               placeholder="Address (optional)"
-              value={customer.address}
-              onChange={e => setCustomer({ ...customer, address: e.target.value })}
+              value={customerAddress}
+              onChange={e => setCustomerAddress(e.target.value)}
             />
           </fieldset>
         </div>
 
-        {/* Items table */}
+        {/* Invoice details */}
         <fieldset>
-          <legend>Items</legend>
-          <table className="min-w-full">
+          <legend>Invoice details</legend>
+          <div className="grid-2">
+            <input
+              placeholder="INV-2025-0001"
+              required
+              value={invoiceNumber}
+              onChange={e => setInvoiceNumber(e.target.value)}
+            />
+            <input
+              type="date"
+              required
+              value={invoiceDate}
+              onChange={e => setInvoiceDate(e.target.value)}
+            />
+            <input
+              type="date"
+              required
+              value={dueDate}
+              onChange={e => setDueDate(e.target.value)}
+            />
+            <input
+              placeholder="PO number (optional)"
+              value={poNumber}
+              onChange={e => setPoNumber(e.target.value)}
+            />
+          </div>
+          <textarea
+            placeholder="Notes (optional)"
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--color-border)' }}
+          />
+        </fieldset>
+
+        {/* Line items */}
+        <fieldset>
+          <legend>Line items</legend>
+          <table className="data" style={{ width: '100%' }}>
             <thead>
               <tr>
                 <th>Description</th>
-                <th>Qty</th>
-                <th>Unit Price</th>
-                <th>Total</th>
-                <th/>
+                <th className="num">Qty</th>
+                <th className="num">Unit £</th>
+                <th className="num">VAT %</th>
+                <th className="num">Line £</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {items.map(it => {
-                const line = it.quantity * it.unitPrice;
+                const lineTotal = it.quantity * it.unitPrice * (1 + it.vatRate / 100);
                 return (
                   <tr key={it.id}>
                     <td>
@@ -193,7 +270,7 @@ export default function CreateForm() {
                         onChange={e => updateItem(it.id, { description: e.target.value })}
                       />
                     </td>
-                    <td>
+                    <td className="num">
                       <input
                         type="number"
                         min={0}
@@ -201,7 +278,7 @@ export default function CreateForm() {
                         onChange={e => updateItem(it.id, { quantity: Number(e.target.value) })}
                       />
                     </td>
-                    <td>
+                    <td className="num">
                       <input
                         type="number"
                         min={0}
@@ -210,56 +287,67 @@ export default function CreateForm() {
                         onChange={e => updateItem(it.id, { unitPrice: Number(e.target.value) })}
                       />
                     </td>
-                    <td>{nfMoney.format(line)}</td>
+                    <td className="num">
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.5"
+                        value={it.vatRate}
+                        onChange={e => updateItem(it.id, { vatRate: Number(e.target.value) })}
+                      />
+                    </td>
+                    <td className="num">{nfMoney.format(lineTotal)}</td>
                     <td>
-                      <button type="button" onClick={() => removeItem(it.id)}>✕</button>
+                      <button
+                        type="button"
+                        className="btn btn-link"
+                        onClick={() => removeItem(it.id)}
+                      >
+                        ✕
+                      </button>
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          <button type="button" onClick={addItem}>+ Add item</button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={addItem}
+            style={{ marginTop: '8px' }}
+          >
+            Add item
+          </button>
         </fieldset>
 
-        {/* Totals & actions */}
-        <div className="flex justify-between items-center">
-          <div>
-            <div>Subtotal: <strong>{nfMoney.format(subTotal)}</strong></div>
-            <div>
-              VAT (%): 
-              <input
-                type="number"
-                min={0}
-                step="0.5"
-                value={vatRate}
-                onChange={e => setVatRate(Number(e.target.value))}
-                style={{ width: 60, marginLeft: 8 }}
-              />
-            </div>
-            <div>VAT amount: <strong>{nfMoney.format(vatAmount)}</strong></div>
-            <div>Grand total: <strong>{nfMoney.format(grandTotal)}</strong></div>
+        {/* Totals */}
+        <section className="card" id="totals">
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <strong>Subtotal</strong> <span>{nfMoney.format(subTotal)}</span>
           </div>
-          <div className="space-x-4">
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={submitting}
-            >
-              {submitting ? 'Sending…' : 'Send invoice'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => window.print()}
-            >
-              Print
-            </button>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <strong>VAT</strong> <span>{nfMoney.format(vatTotal)}</span>
           </div>
-        </div>
+          <div
+            className="row"
+            style={{ justifyContent: 'space-between', fontSize: '1.25rem', marginTop: '8px' }}
+          >
+            <strong>Total</strong> <span>{nfMoney.format(grandTotal)}</span>
+          </div>
+        </section>
 
+        {/* Actions + Error */}
+        <div className="row" style={{ marginTop: '12px' }}>
+          <button type="submit" className="btn btn-primary" disabled={submitting}>
+            {submitting ? 'Sending…' : 'Send invoice'}
+          </button>
+          <a href="/pricing.html" className="btn btn-secondary">
+            Remove watermark & lift limits
+          </a>
+        </div>
         {errorMsg && (
-          <div style={{ color: 'crimson', marginTop: 8 }}>
+          <div style={{ color: 'crimson', marginTop: '8px' }}>
             {errorMsg}
           </div>
         )}
