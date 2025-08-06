@@ -1,96 +1,144 @@
 'use client';
-export const dynamic = 'force-dynamic';
 
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 type Invoice = {
-  id: string;
-  invoice_num: string;
-  sent_at: string;
-  customer: { name: string; email: string };
-  totals: { grandTotal: number; currency: string };
+  id?: string | number | null;
+  sent_at?: string | null;
+  invoice_num?: string;
+  customer_name?: string;
+  customer_email?: string;
+  total?: number | null;
+  currency?: string | null;
+  pdf_url?: string | null;
 };
 
+function formatDate(d?: string | null) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return isNaN(dt.getTime()) ? '—' : dt.toLocaleString();
+}
+
+function formatMoney(v?: number | null, currency?: string | null) {
+  if (typeof v !== 'number') return '—';
+  const cur = currency || 'GBP';
+  try {
+    return new Intl.NumberFormat('en-GB', { style: 'currency', currency: cur }).format(v);
+  } catch {
+    return `${cur} ${v.toFixed(2)}`;
+  }
+}
+
 export default function DashboardPage() {
-  // null = loading, [] = loaded & empty, [...] = loaded
-  const [invoices, setInvoices] = useState<Invoice[] | null>(null);
-  const [error, setError]       = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/invoices', { credentials: 'include' })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        if (!Array.isArray(data)) throw new Error('Invalid response shape');
-        return data as Invoice[];
-      })
-      .then(setInvoices)
-      .catch((err) => {
-        console.error('Failed to load invoices:', err);
-        setError(err.message);
-        setInvoices([]); // stop Loading state
-      });
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const res = await fetch('/api/invoices', {
+          method: 'GET',
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' },
+        });
+
+        if (res.status === 401) {
+          // Not logged in → bounce to login and come back
+          window.location.href = '/login?from=/dashboard';
+          return;
+        }
+
+        const data = await res.json().catch(() => ({} as any));
+
+        // Accept { ok:true, invoices:[...] } (new shape)
+        if (data && data.ok === true && Array.isArray(data.invoices)) {
+          if (!cancelled) setInvoices(data.invoices);
+        }
+        // Back-compat: if API ever returned a raw array
+        else if (Array.isArray(data)) {
+          if (!cancelled) setInvoices(data);
+        }
+        // Some earlier debug shapes like { debug: [...] }
+        else if (data && Array.isArray(data.debug)) {
+          if (!cancelled) setInvoices(data.debug);
+        } else {
+          throw new Error('Invalid response shape');
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // 1) error
-  if (error) {
-    return (
-      <section className="container py-10">
-        <h1>Dashboard</h1>
-        <div style={{ color: 'crimson' }}>{error}</div>
-      </section>
-    );
-  }
-
-  // 2) still loading
-  if (invoices === null) {
-    return (
-      <section className="container py-10">
-        <h1>Dashboard</h1>
-        <p>Loading…</p>
-      </section>
-    );
-  }
-
-  // 3) loaded & empty
-  if (invoices.length === 0) {
-    return (
-      <section className="container py-10">
-        <h1>Dashboard</h1>
-        <p>No invoices sent yet.</p>
-      </section>
-    );
-  }
-
-  // 4) loaded & has data
   return (
-    <section className="container py-10">
-      <h1>Dashboard</h1>
-      <table className="data">
-        <thead>
-          <tr>
-            <th>Date</th><th>Invoice #</th><th>Customer</th><th className="num">Total</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {invoices.map((inv) => (
-            <tr key={inv.id}>
-              <td>{new Date(inv.sent_at).toLocaleDateString()}</td>
-              <td>{inv.invoice_num}</td>
-              <td>{inv.customer?.name || ''}</td>
-              <td className="num">
-                {inv.totals.currency}{inv.totals.grandTotal.toFixed(2)}
-              </td>
-              <td className="num">
-                <Link href={`/status/${inv.id}`} className="btn btn-link">
-                  View status
-                </Link>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+    <main className="container py-10">
+      <h1 style={{ marginTop: 0 }}>Dashboard</h1>
+
+      {loading && <div>Loading…</div>}
+
+      {!loading && error && (
+        <div style={{ color: 'crimson', margin: '12px 0' }}>
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && invoices.length === 0 && (
+        <div className="card" style={{ padding: 16 }}>
+          <strong>No invoices yet.</strong>
+          <div className="muted" style={{ marginTop: 6 }}>
+            Create your first invoice on the <a href="/create">Create Invoice</a> page.
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && invoices.length > 0 && (
+        <section className="card" style={{ overflowX: 'auto' }}>
+          <table className="data" style={{ width: '100%', minWidth: 720 }}>
+            <thead>
+              <tr>
+                <th>Sent</th>
+                <th>Invoice #</th>
+                <th>Customer</th>
+                <th>Email</th>
+                <th className="num">Total</th>
+                <th>PDF</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((inv, idx) => (
+                <tr key={String(inv.id ?? idx)}>
+                  <td>{formatDate(inv.sent_at)}</td>
+                  <td>{inv.invoice_num || '—'}</td>
+                  <td>{inv.customer_name || '—'}</td>
+                  <td>{inv.customer_email || '—'}</td>
+                  <td className="num">{formatMoney(inv.total, inv.currency)}</td>
+                  <td>
+                    {inv.pdf_url ? (
+                      <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer">
+                        Open PDF
+                      </a>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+    </main>
   );
 }
