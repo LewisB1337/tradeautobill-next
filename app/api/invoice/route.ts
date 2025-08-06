@@ -44,22 +44,43 @@ function normalizePayload(raw: any) {
 }
 
 type AnySupabase = SupabaseClient<any, any, any>;
+
+async function countUsage(
+  admin: AnySupabase,
+  userId: string,
+  sinceISO: string
+) {
+  let { count, error } = await admin
+    .from('usage')
+    .select('id', { head: true, count: 'exact' })
+    .eq('user', userId)
+    .gte('created_at', sinceISO);
+
+  if (error) {
+    const r2 = await admin
+      .from('usage')
+      .select('id', { head: true, count: 'exact' })
+      .eq('user_id', userId)
+      .gte('created_at', sinceISO);
+    if (r2.error) {
+      throw new Error(
+        `countUsage failed: ${JSON.stringify({ err1: error, err2: r2.error })}`
+      );
+    }
+    count = r2.count!;
+  }
+
+  return count ?? 0;
+}
+
 async function getUsage(admin: AnySupabase, userId: string) {
   const now = Date.now();
   const dayAgo   = new Date(now - 24*60*60*1000).toISOString();
   const monthAgo = new Date(now - 30*24*60*60*1000).toISOString();
 
-  const { count: dCount, error: dErr } = await admin
-    .from('usage').select('id', { head: true, count: 'exact' })
-    .eq('user', userId).gte('created_at', dayAgo);
-  if (dErr) throw dErr;
-
-  const { count: mCount, error: mErr } = await admin
-    .from('usage').select('id', { head: true, count: 'exact' })
-    .eq('user', userId).gte('created_at', monthAgo);
-  if (mErr) throw mErr;
-
-  return { daily: dCount ?? 0, monthly: mCount ?? 0 };
+  const daily   = await countUsage(admin, userId, dayAgo);
+  const monthly = await countUsage(admin, userId, monthAgo);
+  return { daily, monthly };
 }
 
 function limitsForTier(tier: string) {
@@ -68,7 +89,7 @@ function limitsForTier(tier: string) {
   return { daily: 3, monthly: 10 };
 }
 
-// For quick sanity: GET returns whoami
+// Quick whoami
 export async function GET() {
   let stage = 'start';
   try {
@@ -79,7 +100,8 @@ export async function GET() {
     const tier = (user.app_metadata?.tier as string) || 'free';
     return json({ ok: true, stage: 'done', user: { id: user.id, tier } });
   } catch (e: any) {
-    return json({ ok: false, stage, error: e?.message || String(e) }, 500);
+    const err = typeof e === 'object' ? JSON.stringify(e) : String(e);
+    return json({ ok: false, stage, error: err }, 500);
   }
 }
 
@@ -120,8 +142,12 @@ export async function POST(req: Request) {
     if (monthly >= lim.monthly) return json({ ok: false, stage, error: 'Monthly limit reached' }, 429);
 
     stage = 'usage.insert';
-    const { error: insErr } = await admin.from('usage').insert({ user: user.id, kind: 'invoice_send' });
-    if (insErr) return json({ ok: false, stage, error: insErr.message }, 500);
+    // Insert row; tolerate either column name
+    let insErr = (await admin.from('usage').insert({ user: user.id, kind: 'invoice_send' })).error;
+    if (insErr) {
+      insErr = (await admin.from('usage').insert({ user_id: user.id, kind: 'invoice_send' })).error;
+    }
+    if (insErr) return json({ ok: false, stage, error: `usage insert failed: ${JSON.stringify(insErr)}` }, 500);
 
     stage = 'n8n.prepare';
     const invoice = {
@@ -148,6 +174,7 @@ export async function POST(req: Request) {
     stage = 'done';
     return json({ ok: true, stage, jobId: n8nJson?.jobId ?? null, n8n: n8nJson ?? n8nText ?? null });
   } catch (e: any) {
-    return json({ ok: false, stage, error: e?.message || String(e) }, 500);
+    const err = typeof e === 'object' ? JSON.stringify(e) : String(e);
+    return json({ ok: false, stage, error: err }, 500);
   }
 }

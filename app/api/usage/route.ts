@@ -13,6 +13,36 @@ function json(data: any, status = 200) {
   return NextResponse.json(data, { status });
 }
 
+async function countUsage(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  sinceISO: string
+) {
+  // Try column "user" (quoted in SQL) then fallback to "user_id"
+  let { count, error } = await admin
+    .from('usage')
+    .select('id', { head: true, count: 'exact' })
+    .eq('user', userId)
+    .gte('created_at', sinceISO);
+
+  if (error) {
+    // Fallback to user_id
+    const r2 = await admin
+      .from('usage')
+      .select('id', { head: true, count: 'exact' })
+      .eq('user_id', userId)
+      .gte('created_at', sinceISO);
+    if (r2.error) {
+      throw new Error(
+        `countUsage failed: ${JSON.stringify({ err1: error, err2: r2.error })}`
+      );
+    }
+    count = r2.count!;
+  }
+
+  return count ?? 0;
+}
+
 export async function GET() {
   let stage = 'start';
   try {
@@ -36,16 +66,10 @@ export async function GET() {
     const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
 
     stage = 'query.daily';
-    const { count: dailyCount, error: dailyErr } = await admin
-      .from('usage').select('id', { head: true, count: 'exact' })
-      .eq('user', user.id).gte('created_at', dayAgo);
-    if (dailyErr) return json({ ok: false, stage, error: dailyErr.message }, 500);
+    const dailyCount = await countUsage(admin, user.id, dayAgo);
 
     stage = 'query.monthly';
-    const { count: monthlyCount, error: monthlyErr } = await admin
-      .from('usage').select('id', { head: true, count: 'exact' })
-      .eq('user', user.id).gte('created_at', monthAgo);
-    if (monthlyErr) return json({ ok: false, stage, error: monthlyErr.message }, 500);
+    const monthlyCount = await countUsage(admin, user.id, monthAgo);
 
     stage = 'tier';
     const tier = (user.app_metadata?.tier as string) || 'free';
@@ -56,13 +80,15 @@ export async function GET() {
     return json({
       ok: true,
       stage: 'done',
-      daily_count: dailyCount ?? 0,
-      monthly_count: monthlyCount ?? 0,
+      daily_count: dailyCount,
+      monthly_count: monthlyCount,
       daily_limit,
       monthly_limit,
       tier,
     });
   } catch (e: any) {
-    return json({ ok: false, stage, error: e?.message || String(e) }, 500);
+    // Properly serialize the error
+    const err = typeof e === 'object' ? JSON.stringify(e) : String(e);
+    return json({ ok: false, stage, error: err }, 500);
   }
 }
