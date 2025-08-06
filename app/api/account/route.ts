@@ -5,26 +5,26 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 
 export const runtime = 'nodejs'
 
-// Map your plan names -> limits here
+// Set your limits here
 const PLAN_LIMITS: Record<string, { daily: number | null; monthly: number | null }> = {
-  Free: { daily: 3, monthly: 10 },
-  Pro:  { daily: 50, monthly: 1000 },
-  // Add more tiers as you introduce them
+  Free:    { daily: 3,  monthly: 10 },
+  Starter: { daily: 20, monthly: 500 },
+  Pro:     { daily: 50, monthly: 1000 },
+  Business:{ daily: null, monthly: null }, // unlimited
 }
 
-function startOfUTCDay(d = new Date()) {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0))
-}
-function startOfUTCMonth(d = new Date()) {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0))
-}
+function startOfUTCDay(d = new Date())   { return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0,0,0,0)) }
+function startOfUTCMonth(d = new Date()) { return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0,0,0,0)) }
 
-function mapPriceToTier(input?: string | null): string | null {
+function mapToTier(input?: string | null): string | null {
   if (!input) return null
-  const key = String(input).toLowerCase()
-  // map either Stripe price lookup keys or IDs to your tier names
-  if (key.includes('pro'))  return 'Pro'
-  if (key.includes('free')) return 'Free'
+  const s = input.toLowerCase()
+  if (s.includes('business')) return 'Business'
+  if (s.includes('pro'))      return 'Pro'
+  if (s.includes('starter'))  return 'Starter'
+  if (s.includes('basic'))    return 'Starter'
+  if (s.includes('free'))     return 'Free'
+  if (s.includes('standard')) return 'Starter'
   return null
 }
 
@@ -35,11 +35,10 @@ export async function GET() {
     if (authErr) return NextResponse.json({ ok: false, error: authErr.message }, { status: 500 })
     if (!user)   return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
-    // --- Determine tier & renewal date ---
+    // 1) Try profiles.tier first (explicit override)
     let tier: string | null = null
     let renewsAt: string | null = null
 
-    // Try profiles table first (if you keep tier/renewal there)
     const { data: profile } = await sb
       .from('profiles')
       .select('tier, renews_at')
@@ -49,11 +48,13 @@ export async function GET() {
     if (profile?.tier) {
       tier = profile.tier
       renewsAt = profile.renews_at ?? null
-    } else {
-      // Try subscriptions table (Stripe-style)
+    }
+
+    // 2) If no explicit tier, infer from Stripe subscription → price → product
+    if (!tier) {
       const { data: sub } = await sb
         .from('subscriptions')
-        .select('status, current_period_end, price_id, price_lookup_key')
+        .select('status, current_period_end, price_id')
         .eq('user_id', user.id)
         .in('status', ['active', 'trialing'])
         .order('current_period_end', { ascending: false })
@@ -61,55 +62,72 @@ export async function GET() {
         .maybeSingle()
 
       if (sub) {
-        tier = mapPriceToTier(sub.price_lookup_key || sub.price_id) ?? 'Pro' // default to Pro if active
         renewsAt = sub.current_period_end ?? null
+
+        // fetch price
+        let lookup_key: string | null = null
+        let nickname:   string | null = null
+        let product_id: string | null = null
+
+        if (sub.price_id) {
+          const { data: price } = await sb
+            .from('prices')
+            .select('lookup_key, nickname, product_id')
+            .eq('id', sub.price_id)
+            .maybeSingle()
+
+          lookup_key = price?.lookup_key ?? null
+          nickname   = price?.nickname ?? null
+          product_id = price?.product_id ?? null
+        }
+
+        // fetch product name
+        let product_name: string | null = null
+        if (product_id) {
+          const { data: product } = await sb
+            .from('products')
+            .select('name')
+            .eq('id', product_id)
+            .maybeSingle()
+          product_name = product?.name ?? null
+        }
+
+        // decide tier
+        tier =
+          mapToTier(lookup_key) ||
+          mapToTier(nickname)   ||
+          mapToTier(product_name) ||
+          'Pro' // active sub but unknown naming → treat as Pro
       }
     }
 
-    if (!tier) tier = 'Free' // fallback
+    if (!tier) tier = 'Free' // final fallback
 
-    // --- Usage from invoices table ---
-    const todayStart  = startOfUTCDay()
-    const monthStart  = startOfUTCMonth()
-
+    // 3) Usage counts from invoices (UTC window)
+    const todayStart = startOfUTCDay()
+    const monthStart = startOfUTCMonth()
     const { count: countToday,  error: ctErr } = await sb
-      .from('invoices')
-      .select('id', { head: true, count: 'exact' })
+      .from('invoices').select('id', { head: true, count: 'exact' })
       .eq('user_id', user.id)
       .gte('created_at', todayStart.toISOString())
-
     if (ctErr) return NextResponse.json({ ok: false, error: ctErr.message }, { status: 500 })
 
     const { count: countMonth, error: cmErr } = await sb
-      .from('invoices')
-      .select('id', { head: true, count: 'exact' })
+      .from('invoices').select('id', { head: true, count: 'exact' })
       .eq('user_id', user.id)
       .gte('created_at', monthStart.toISOString())
-
     if (cmErr) return NextResponse.json({ ok: false, error: cmErr.message }, { status: 500 })
 
     const limits = PLAN_LIMITS[tier] ?? PLAN_LIMITS.Free
     const usage = {
-      today: {
-        count: countToday ?? 0,
-        limit: limits.daily, // null means unlimited
-      },
-      month: {
-        count: countMonth ?? 0,
-        limit: limits.monthly, // null means unlimited
-      },
+      today: {  count: countToday  ?? 0, limit: limits.daily   },
+      month: {  count: countMonth  ?? 0, limit: limits.monthly },
     }
 
     return NextResponse.json({
       ok: true,
       plan: { tier, renewsAt },
       usage,
-      meta: {
-        // clarify that counts are computed in UTC to avoid confusion
-        tz: 'UTC',
-        todayStart: todayStart.toISOString(),
-        monthStart: monthStart.toISOString(),
-      },
     })
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 })
