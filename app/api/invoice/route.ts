@@ -1,12 +1,15 @@
 // app/api/invoice/route.ts
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
-import crypto from 'node:crypto';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
 export const runtime = 'nodejs';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Env
+// ─────────────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const N8N_URL      = process.env.N8N_WEBHOOK_URL || '';
@@ -16,6 +19,9 @@ function json(data: any, status = 200) {
   return NextResponse.json(data, { status });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 function hmacHex(secret: string, body: string) {
   return crypto.createHmac('sha256', secret).update(body).digest('hex');
 }
@@ -65,7 +71,8 @@ function normalizePayload(raw: any) {
   };
 }
 
-async function getUsage(admin: ReturnType<typeof createClient>, userId: string) {
+type AnySupabase = SupabaseClient<any, any, any>;
+async function getUsage(admin: AnySupabase, userId: string) {
   const now = Date.now();
   const dayAgo   = new Date(now - 24*60*60*1000).toISOString();
   const monthAgo = new Date(now - 30*24*60*60*1000).toISOString();
@@ -89,8 +96,28 @@ function limitsForTier(tier: string) {
   return { daily: 3, monthly: 10 }; // free
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET: return minimal user info (used by client to read tier, etc.)
+// ─────────────────────────────────────────────────────────────────────────────
+export async function GET() {
+  try {
+    const userClient = createRouteHandlerClient({ cookies });
+    const { data: { user }, error } = await userClient.auth.getUser();
+    if (error || !user) return json({ error: 'Unauthorized' }, 401);
+
+    const tier = (user.app_metadata?.tier as string) || 'free';
+    return json({ user: { id: user.id, tier } });
+  } catch (e: any) {
+    return json({ error: e?.message || 'Internal error' }, 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST: create/send invoice (auth + quota + HMAC to n8n)
+// ─────────────────────────────────────────────────────────────────────────────
 export async function POST(req: Request) {
   try {
+    // Env checks
     if (!SUPABASE_URL || !SERVICE_KEY) return json({ error: 'Server not configured (supabase)' }, 500);
     if (!N8N_URL || !SIGN_SECRET)      return json({ error: 'Server not configured (n8n)' }, 500);
 
@@ -99,16 +126,14 @@ export async function POST(req: Request) {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: 'Unauthorized' }, 401);
 
+    // Admin client (server-side only)
     const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
-    // Read raw body for signing + parse JSON
-    const rawBody = await req.text();
+    // Parse JSON
     let body: any;
-    try { body = JSON.parse(rawBody); } catch {
-      return json({ error: 'Invalid JSON body' }, 400);
-    }
+    try { body = await req.json(); } catch { return json({ error: 'Invalid JSON body' }, 400); }
 
-    // Normalize and validate soft requirements
+    // Normalize + minimal validation
     const norm = normalizePayload(body);
     if (!norm.customerEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(norm.customerEmail)) {
       return json({ error: 'Invalid or missing customerEmail' }, 400);
@@ -124,14 +149,14 @@ export async function POST(req: Request) {
     if (daily >= lim.daily)     return json({ error: 'Daily limit reached' }, 429);
     if (monthly >= lim.monthly) return json({ error: 'Monthly limit reached' }, 429);
 
-    // Insert usage row
+    // Record usage
     const { error: insErr } = await admin.from('usage').insert({
       user: user.id,
       kind: 'invoice_send',
     });
     if (insErr) return json({ error: insErr.message }, 500);
 
-    // Outbound payload to n8n
+    // Payload to n8n
     const invoice = {
       business: norm.business,
       customer: norm.customer,
@@ -145,7 +170,7 @@ export async function POST(req: Request) {
     };
     const outBody = JSON.stringify({ invoice });
 
-    // Sign + send to n8n
+    // Sign + send
     const signature = hmacHex(SIGN_SECRET, outBody);
     const n8nRes = await fetch(N8N_URL, {
       method: 'POST',
@@ -164,7 +189,6 @@ export async function POST(req: Request) {
       return json({ error: `n8n error ${n8nRes.status}`, detail: n8nText }, 502);
     }
 
-    // Always return JSON with something useful
     return json({
       ok: true,
       jobId: n8nJson?.jobId ?? null,
