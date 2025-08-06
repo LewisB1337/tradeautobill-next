@@ -1,63 +1,83 @@
 // app/api/invoice/route.ts
-import { NextResponse } from 'next/server'
-import crypto from 'crypto'
-import { getUserFromRequest } from '@/lib/auth'
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { getTierForUser } from '@/lib/tiers'
+import { NextRequest, NextResponse } from 'next/server'
 
-// helper to HMAC-sign the body
-function sign(body: unknown) {
-  const json = JSON.stringify(body)
-  return crypto.createHmac('sha256', process.env.N8N_HMAC_SECRET!).update(json).digest('hex')
-}
+// If you call an upstream like n8n, set this in Netlify env
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL
 
-export async function POST(req: Request) {
-  // 1) Authenticate
-  const { user } = await getUserFromRequest()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+export const runtime = 'nodejs' // ensure Node runtime on Netlify
 
-  // 2) Parse & validate
+export async function POST(req: NextRequest) {
   let body: any
+
+  // --- Parse body
   try {
     body = await req.json()
-  } catch {
+  } catch (err) {
+    console.error('❌ Invalid JSON:', err)
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+
+  console.log('<<< /api/invoice received payload:', JSON.stringify(body))
+
+  // --- Minimal validation (matches what your UI now sends)
   if (!body?.customerEmail || !Array.isArray(body.items)) {
+    console.error('❌ Invalid payload shape:', {
+      hasCustomerEmail: !!body?.customerEmail,
+      itemsIsArray: Array.isArray(body.items),
+    })
     return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
   }
 
-  // 3) Determine the real tier and enforce usage
-  const tier = await getTierForUser(user.id)
-  const { error: rpcError } = await supabaseAdmin.rpc('check_and_increment_usage', {
-    p_user: user.id,
-    p_tier: tier,
-  })
-  if (rpcError) {
-    // rpcError.message will be 'Daily free limit reached', etc.
-    return NextResponse.json({ error: rpcError.message }, { status: 429 })
+  // Optional: normalize item numbers (defensive)
+  body.items = body.items.map((it: any) => ({
+    description: it.description ?? '',
+    quantity: Number(it.quantity) || 0,
+    unitPrice: Number(it.unitPrice) || 0,
+    id: it.id ?? null,
+  }))
+
+  // --- Call upstream (if configured)
+  if (!N8N_WEBHOOK_URL) {
+    console.error('❌ Missing env N8N_WEBHOOK_URL')
+    return NextResponse.json(
+      { error: 'Server not configured: N8N_WEBHOOK_URL is missing' },
+      { status: 500 }
+    )
   }
 
-  // 4) Forward to n8n, signed with your secret
-  const forward = { userId: user.id, tier, invoice: body }
-  const sig = sign(forward)
+  try {
+    const upstreamRes = await fetch(N8N_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
 
-  const res = await fetch(process.env.N8N_WEBHOOK_URL!, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-hmac-signature': sig,
-    },
-    body: JSON.stringify(forward),
-  })
+    const text = await upstreamRes.text()
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    return NextResponse.json({ error: `Upstream error (${res.status}) ${text}` }, { status: 502 })
+    if (!upstreamRes.ok) {
+      console.error('❌ Upstream error', upstreamRes.status, text.slice(0, 500))
+      return NextResponse.json(
+        { error: 'Upstream error', status: upstreamRes.status, detail: text },
+        { status: 502 }
+      )
+    }
+
+    console.log('✅ Upstream success', text.slice(0, 500))
+    // pass upstream JSON/text back to client
+    try {
+      return NextResponse.json(JSON.parse(text))
+    } catch {
+      return new NextResponse(text, { status: 200 })
+    }
+  } catch (err: any) {
+    console.error('❌ Exception calling upstream:', err?.message || err)
+    return NextResponse.json(
+      { error: 'Server exception', message: String(err) },
+      { status: 500 }
+    )
   }
+}
 
-  const data = await res.json().catch(() => ({}))
-  return NextResponse.json(data, { status: 200 })
+export async function GET() {
+  return NextResponse.json({ ok: true })
 }
