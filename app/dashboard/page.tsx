@@ -1,14 +1,6 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import {
-  MagnifyingGlassIcon,
-  ArrowPathIcon,
-  ArrowDownTrayIcon,
-  DocumentDuplicateIcon,
-  EnvelopeIcon,
-  EyeIcon,
-} from '@heroicons/react/24/outline'
 
 type Invoice = {
   id: string
@@ -29,15 +21,12 @@ export default function DashboardPage() {
   const [page, setPage] = useState(1)
   const pageSize = 10
 
-  useEffect(() => {
-    load()
-  }, [])
+  useEffect(() => { load() }, [])
 
   async function load() {
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     try {
-      const res = await fetch('/api/invoices', { cache: 'no-store' })
+      const res  = await fetch('/api/invoices', { cache: 'no-store' })
       const json = await res.json()
       if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`)
       setInvoices(json.invoices)
@@ -51,12 +40,10 @@ export default function DashboardPage() {
   const filtered = useMemo(() => {
     let rows = invoices
     const q = query.trim().toLowerCase()
-    if (q) {
-      rows = rows.filter(r =>
-        r.id.toLowerCase().includes(q) ||
-        (r.email ?? '').toLowerCase().includes(q)
-      )
-    }
+    if (q) rows = rows.filter(r =>
+      r.id.toLowerCase().includes(q) ||
+      (r.email ?? '').toLowerCase().includes(q)
+    )
     return rows.sort((a, b) => {
       switch (sort) {
         case 'date_desc':   return +new Date(b.created_at) - +new Date(a.created_at)
@@ -89,8 +76,8 @@ export default function DashboardPage() {
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a   = document.createElement('a')
-    a.href    = url
-    a.download= `invoices-${new Date().toISOString().slice(0,10)}.csv`
+    a.href     = url
+    a.download = `invoices-${new Date().toISOString().slice(0,10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -103,16 +90,13 @@ export default function DashboardPage() {
         {/* Toolbar */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div className="flex items-center w-full md:w-1/3">
-            <div className="relative w-full">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 h-5 w-5 text-gray-400 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search invoice # or email…"
-                value={query}
-                onChange={e => { setQuery(e.target.value); setPage(1) }}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+            <input
+              type="text"
+              placeholder="🔍 Search invoice # or email…"
+              value={query}
+              onChange={e => { setQuery(e.target.value); setPage(1) }}
+              className="w-full pl-4 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
@@ -133,15 +117,13 @@ export default function DashboardPage() {
               onClick={load}
               className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
             >
-              <ArrowPathIcon className="h-5 w-5 text-gray-600" />
-              <span className="text-sm">Refresh</span>
+              🔄 Refresh
             </button>
             <button
               onClick={() => downloadCsv(filtered)}
               className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
             >
-              <ArrowDownTrayIcon className="h-5 w-5 text-gray-600" />
-              <span className="text-sm">Export CSV</span>
+              ⬇️ Export CSV
             </button>
           </div>
         </div>
@@ -188,12 +170,12 @@ export default function DashboardPage() {
                       <td className="px-4 py-2 text-gray-500">{idx}</td>
                       <td className="px-4 py-2 font-mono flex items-center gap-2">
                         {inv.id}
-                        <button onClick={() => copyText(inv.id)} className="p-1 rounded hover:bg-gray-100">
-                          <DocumentDuplicateIcon className="h-4 w-4 text-gray-500" />
+                        <button onClick={() => copyText(inv.id)} className="text-gray-500 hover:text-gray-700">
+                          📄
                         </button>
                       </td>
                       <td className="px-4 py-2 flex items-center gap-1">
-                        <EnvelopeIcon className="h-4 w-4 text-gray-400" />
+                        ✉️
                         <span className="truncate">{inv.email ?? '—'}</span>
                       </td>
                       <td className="px-4 py-2 text-right">{`£${inv.total.toFixed(2)}`}</td>
@@ -220,12 +202,8 @@ export default function DashboardPage() {
                         ) : '—'}
                       </td>
                       <td className="px-4 py-2 flex items-center gap-2">
-                        <button className="p-1 rounded hover:bg-gray-100" title="Resend">
-                          <ArrowPathIcon className="h-5 w-5 text-gray-500" />
-                        </button>
-                        <button className="p-1 rounded hover:bg-gray-100" title="View PDF">
-                          <EyeIcon className="h-5 w-5 text-gray-500" />
-                        </button>
+                        <button className="hover:text-gray-700" title="Resend">🔄</button>
+                        <button className="hover:text-gray-700" title="View PDF">👁️</button>
                       </td>
                     </tr>
                   )
