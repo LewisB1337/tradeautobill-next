@@ -66,13 +66,19 @@ export default function CreateForm() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+
     const invoiceData = {
+      // REQUIRED by your API:
+      customerEmail: customer.email,
+      items,
+
+      // Extra context you still want to pass through:
       business,
       customer,
-      items,
       vatRate,
       totals: { subTotal, vatAmount, grandTotal, currency },
     };
+
     console.log('>>> Sending invoice payload:', invoiceData);
 
     try {
