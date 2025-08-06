@@ -22,7 +22,7 @@ function hmacHex(secret: string, body: string) {
   return crypto.createHmac('sha256', secret).update(body).digest('hex')
 }
 
-// Normalize incoming payload (keep it simple; pass through fields you need)
+// Normalize incoming payload
 function normalizePayload(raw: any) {
   const business      = raw?.business ?? {}
   const customer      = raw?.customer ?? {}
@@ -43,7 +43,6 @@ function normalizePayload(raw: any) {
     customer,
     items,
     meta: {
-      // keep whatever you had before if needed; not persisted in DB in this minimal schema
       invoiceNumber: raw?.meta?.invoiceNumber ?? null,
       notes: raw?.meta?.notes ?? '',
       taxRate,
@@ -68,7 +67,7 @@ export async function POST(req: Request) {
     const raw = await req.json().catch(() => ({}))
     const norm = normalizePayload(raw)
 
-    // 3) Kick n8n workflow (optional, if configured)
+    // 3) Kick n8n workflow (optional)
     stage = 'n8n'
     let n8nJson: any = null
     let n8nText = ''
@@ -96,13 +95,12 @@ export async function POST(req: Request) {
 
     const invRec = {
       user_id: user.id,
-      pdf_url: pdfUrl,     // only columns that actually exist
-      // created_at is defaulted by DB
+      pdf_url: pdfUrl, // only columns that exist
+      // created_at is DB default
     }
 
     const { error: invErr } = await admin.from('invoices').insert(invRec)
     if (invErr) {
-      // Don’t fail the whole request if history insert fails; log and continue
       console.error('[invoice] history insert error', invErr)
     }
 
@@ -113,7 +111,8 @@ export async function POST(req: Request) {
       stage,
       jobId: n8nJson?.jobId ?? null,
       pdfUrl: pdfUrl ?? null,
-      n8n: n8nJson ?? n8nText || null,
+      // FIX: add parens when mixing ?? with ||
+      n8n: n8nJson ?? (n8nText || null),
     }, 200)
 
   } catch (e: any) {
