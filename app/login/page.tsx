@@ -1,3 +1,4 @@
+// app/login/page.tsx
 'use client';
 
 import { useState } from 'react';
@@ -5,7 +6,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle'|'sending'|'sent'|'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
@@ -15,7 +16,8 @@ export default function LoginPage() {
 
     try {
       const supabase = createClientComponentClient();
-      const redirectTo = `${window.location.origin}/confirm`;
+      // Redirect to your new server-side callback
+      const redirectTo = `${window.location.origin}/auth/callback`;
 
       const { error: err } = await supabase.auth.signInWithOtp({
         email,
