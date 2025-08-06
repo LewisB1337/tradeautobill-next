@@ -8,8 +8,8 @@ export const runtime = 'nodejs'
 export async function GET() {
   try {
     // 1) Auth
-    const userClient = createRouteHandlerClient({ cookies })
-    const { data: { user }, error: authErr } = await userClient.auth.getUser()
+    const supabase = createRouteHandlerClient({ cookies })
+    const { data: { user }, error: authErr } = await supabase.auth.getUser()
     if (authErr) {
       return NextResponse.json({ ok: false, error: authErr.message }, { status: 500 })
     }
@@ -17,17 +17,13 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    // 2) Fetch invoices for this user
-    // we reuse the same handler client (which is scoped to the right cookie/headers)
-    const supabase = createRouteHandlerClient({ cookies })
+    // 2) Fetch invoices for this user — only select columns that exist
     const { data: invoices, error } = await supabase
       .from('invoices')
       .select(`
         id,
-        invoice_num,
-        customer,
-        totals,
-        created_at
+        created_at,
+        pdf_url
       `)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
@@ -38,8 +34,7 @@ export async function GET() {
 
     // 3) Return shape { ok: true, invoices: [...] }
     return NextResponse.json({ ok: true, invoices })
-
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 })
+    return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 })
   }
 }

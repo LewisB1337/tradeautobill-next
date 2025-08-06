@@ -1,69 +1,78 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 type Invoice = {
   id: string
-  invoice_num: string
-  customer: { name: string }
-  totals: { grandTotal: number; currency: string }
   created_at: string
+  pdf_url: string | null
 }
 
 export default function DashboardPage() {
-  const [invoices, setInvoices] = useState<Invoice[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [invoices, setInvoices] = useState<Invoice[]>([])
 
   useEffect(() => {
-    setLoading(true)
-    fetch('/api/invoices', { credentials: 'include' })
-      .then(async (res) => {
+    let isMounted = true
+    ;(async () => {
+      try {
+        const res = await fetch('/api/invoices', { cache: 'no-store' })
         const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Failed to load')
-        if (!Array.isArray(json.invoices)) throw new Error('Invalid response shape')
-        setInvoices(json.invoices)
-      })
-      .catch((e: any) => setError(e.message))
-      .finally(() => setLoading(false))
+        if (!res.ok || !json.ok) {
+          throw new Error(json?.error || `HTTP ${res.status}`)
+        }
+        if (isMounted) setInvoices(json.invoices || [])
+      } catch (e: any) {
+        if (isMounted) setError(e?.message ?? String(e))
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    })()
+    return () => { isMounted = false }
   }, [])
 
+  if (loading) return <div className="p-6">Loading…</div>
+  if (error)   return <div className="p-6 text-red-600">Error: {error}</div>
+
   return (
-    <main className="container py-10">
-      <h1>Dashboard</h1>
+    <div className="p-6 space-y-4">
+      <h1 className="text-2xl font-semibold">Dashboard</h1>
 
-      {loading && <p>Loading your invoices…</p>}
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-
-      {!loading && !error && invoices.length === 0 && (
-        <p>You haven’t sent any invoices yet.</p>
-      )}
-
-      {!loading && invoices.length > 0 && (
-        <table className="data" style={{ width: '100%' }}>
-          <thead>
+      <div className="overflow-x-auto border rounded-lg">
+        <table className="min-w-[640px] w-full text-sm">
+          <thead className="bg-gray-50">
             <tr>
-              <th>Number</th>
-              <th>Date</th>
-              <th>Customer</th>
-              <th>Total</th>
+              <th className="text-left px-4 py-2">#</th>
+              <th className="text-left px-4 py-2">ID</th>
+              <th className="text-left px-4 py-2">Created</th>
+              <th className="text-left px-4 py-2">PDF</th>
             </tr>
           </thead>
           <tbody>
-            {invoices.map((inv) => (
-              <tr key={inv.id}>
-                <td>{inv.invoice_num || '—'}</td>
-                <td>{new Date(inv.created_at).toLocaleDateString()}</td>
-                <td>{inv.customer.name}</td>
-                <td>
-                  {inv.totals.currency}{' '}
-                  {inv.totals.grandTotal.toFixed(2)}
+            {invoices.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-6 text-center text-gray-500">
+                  No invoices yet.
+                </td>
+              </tr>
+            ) : invoices.map((inv, i) => (
+              <tr key={inv.id} className="border-t">
+                <td className="px-4 py-2">{i + 1}</td>
+                <td className="px-4 py-2 font-mono">{inv.id.slice(0, 8)}…</td>
+                <td className="px-4 py-2">
+                  {new Date(inv.created_at).toLocaleString()}
+                </td>
+                <td className="px-4 py-2">
+                  {inv.pdf_url
+                    ? <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="underline">Open PDF</a>
+                    : <span className="text-gray-500">Pending</span>}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      )}
-    </main>
+      </div>
+    </div>
   )
 }
