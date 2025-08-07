@@ -8,15 +8,17 @@ type PlanKey = 'free' | 'standard' | 'pro';
 
 function PlanCard({
   title,
+  subtitle,
   priceText,
   features,
   borderColor,
   cta,
 }: {
   title: string;
-  priceText: string;             // e.g. "£9/mo"
+  subtitle?: string;            // e.g. "Start Sending"
+  priceText: string;            // e.g. "£9/mo"
   features: string[];
-  borderColor?: string;          // e.g. "#cfe3ff" for Standard (legacy)
+  borderColor?: string;         // e.g. "#cfe3ff" for Standard (legacy)
   cta: React.ReactNode;
 }) {
   return (
@@ -29,7 +31,10 @@ function PlanCard({
       }}
     >
       <h2 style={{ marginTop: 0 }}>{title}</h2>
-      <p className="muted" style={{ marginTop: -6 }}>{priceText}</p>
+      {subtitle && (
+        <div className="muted" style={{ marginTop: -6 }}>{subtitle}</div>
+      )}
+      <p className="muted" style={{ marginTop: 6 }}>{priceText}</p>
 
       <ul style={{ paddingLeft: 18, margin: '12px 0' }}>
         {features.map((f, i) => <li key={i}>{f}</li>)}
@@ -52,7 +57,6 @@ export default function PricingClient() {
         router.push('/login');
         return;
       }
-      // Legacy behavior: send them to Account to manage upgrade
       router.push(`/account?plan=${plan}`);
     } catch {
       router.push('/login');
@@ -69,17 +73,19 @@ export default function PricingClient() {
 
       <div
         className="grid-2"
-        // Legacy had 3 equal columns:
         style={{ gridTemplateColumns: '1fr 1fr 1fr' }}
       >
         <PlanCard
           title="Free"
+          subtitle="Start Sending"
           priceText="£0"
           features={[
-            '3 invoices/day, 10/month',
-            'PDF email delivery',
-            'Watermark',
-            '7-day storage',
+            '5 invoices/month',
+            'PDF + email delivery',
+            'Basic template only (no logo)',
+            'Auto-numbering + tax fields',
+            'Watermarked',
+            '14-day invoice history',
           ]}
           cta={
             <Link href="/login" className="btn btn-secondary">
@@ -90,13 +96,17 @@ export default function PricingClient() {
 
         <PlanCard
           title="Standard"
+          subtitle="Run the Business"
           priceText="£9/mo"
           borderColor="#cfe3ff"
           features={[
-            '50 invoices/month',
-            'No watermark, your logo',
-            'Saved business & clients',
+            '100 invoices/month',
+            'Custom logo + footer',
+            'Saved clients + products/services',
+            'Auto-numbering + tax',
+            'Invoice duplication & templates',
             '6-month storage',
+            'Download CSV reports (basic bookkeeping)',
           ]}
           cta={
             <button className="btn btn-primary" onClick={() => handleUpgrade('standard')}>
@@ -107,12 +117,17 @@ export default function PricingClient() {
 
         <PlanCard
           title="Pro"
+          subtitle="Scale & Automate"
           priceText="£29/mo"
           features={[
-            'Up to 500 invoices/month',
-            'Hosted links & webhooks',
-            'Custom footer/colours',
+            'Unlimited invoices/month',
+            'Hosted invoice links (public/private)',
+            'Webhook/API access',
+            'Custom colours, branding, footer',
+            'Saved notes/templates per client',
             '12-month storage',
+            'Auto-send schedules (e.g. Fridays)',
+            'Audit log of sent/delivered invoices',
           ]}
           cta={
             <button className="btn btn-secondary" onClick={() => handleUpgrade('pro')}>
