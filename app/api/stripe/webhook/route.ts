@@ -3,28 +3,31 @@ import { headers } from "next/headers";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 
-// --- Stripe + Supabase clients (server-side secrets) ---
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20" });
+// Use account default API version to avoid type churn
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+
+// Server-side Supabase client (service role)
 const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,               // NOTE: server-side URL (not NEXT_PUBLIC_*)
+  process.env.SUPABASE_URL!,               // NOTE: server URL (not NEXT_PUBLIC_)
   process.env.SUPABASE_SERVICE_ROLE_KEY!   // NOTE: service role key
 );
 
-// Map Stripe Price IDs to your internal tiers
+// Map Stripe Price IDs -> tiers
 const PRICE_TO_TIER: Record<string, "standard" | "pro"> = {
   [process.env.STRIPE_STANDARD_PRICE_ID!]: "standard",
   [process.env.STRIPE_PRO_PRICE_ID!]: "pro",
 };
 
-// Utility: upsert profile + set app_metadata.tier / stripe_customer_id
-async function setUserTierById(userId: string, tier: "free" | "standard" | "pro", stripeCustomerId?: string) {
-  // Update auth app_metadata
+async function setUserTierById(
+  userId: string,
+  tier: "free" | "standard" | "pro",
+  stripeCustomerId?: string
+) {
   const appMeta: Record<string, any> = { tier };
   if (stripeCustomerId) appMeta.stripe_customer_id = stripeCustomerId;
 
   await supabaseAdmin.auth.admin.updateUserById(userId, { app_metadata: appMeta });
 
-  // Mirror into profiles table (handy for future events)
   await supabaseAdmin.from("profiles").upsert({
     id: userId,
     stripe_customer_id: stripeCustomerId ?? null,
@@ -34,13 +37,12 @@ async function setUserTierById(userId: string, tier: "free" | "standard" | "pro"
 }
 
 export async function POST(req: Request) {
-  // Stripe requires the raw body for signature validation, so use req.text()
   const sig = headers().get("stripe-signature");
-  const body = await req.text();
+  const raw = await req.text();
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(body, sig!, process.env.STRIPE_WEBHOOK_SECRET!);
+    event = stripe.webhooks.constructEvent(raw, sig!, process.env.STRIPE_WEBHOOK_SECRET!);
   } catch (err: any) {
     console.error("[stripe:webhook] Bad signature:", err?.message);
     return new Response("Bad signature", { status: 400 });
@@ -51,98 +53,101 @@ export async function POST(req: Request) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
 
-        // Identify customer and plan purchased
-        const customerEmail = session.customer_details?.email || session.customer_email || "";
+        const customerEmail =
+          session.customer_details?.email || session.customer_email || "";
         const customerId = (session.customer as string) || undefined;
 
-        // Get the price used in the session (first line item)
+        // Identify price used
         let priceId: string | undefined;
         try {
-          const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
+          const li = await stripe.checkout.sessions.listLineItems(session.id, {
             limit: 1,
             expand: ["data.price"],
           });
-          priceId = (lineItems.data[0]?.price as Stripe.Price | undefined)?.id;
+          priceId = (li.data[0]?.price as Stripe.Price | undefined)?.id;
         } catch (e) {
-          console.error("[stripe:webhook] Fetch line items failed:", e);
+          console.error("[stripe:webhook] listLineItems failed:", e);
         }
-
         const tier = priceId ? PRICE_TO_TIER[priceId] : undefined;
 
         if (!customerEmail) {
-          console.warn("[stripe:webhook] checkout.session.completed without customerEmail");
+          console.warn("[stripe:webhook] session without email");
           return NextResponse.json({ ok: true });
         }
 
-        // Find the Supabase user by email via user_index (fast), fallback to admin list
+        // Find Supabase user by email (fast path)
         let userId: string | undefined;
-
         const { data: idx, error: idxErr } = await supabaseAdmin
           .from("user_index")
           .select("id")
           .eq("email", customerEmail)
           .maybeSingle();
-        if (idxErr) console.error("[stripe:webhook] user_index lookup error:", idxErr);
+        if (idxErr) console.error("[stripe:webhook] user_index lookup:", idxErr);
         userId = idx?.id;
 
+        // Fallback: admin list scan
         if (!userId) {
           try {
             const { data } = await supabaseAdmin.auth.admin.listUsers();
-            const u = data.users.find((u) => u.email?.toLowerCase() === customerEmail.toLowerCase());
+            const u = data.users.find(
+              (u) => u.email?.toLowerCase() === customerEmail.toLowerCase()
+            );
             userId = u?.id;
           } catch (e) {
-            console.error("[stripe:webhook] admin.listUsers fallback failed:", e);
+            console.error("[stripe:webhook] listUsers fallback failed:", e);
           }
         }
 
         if (userId && tier) {
           await setUserTierById(userId, tier, customerId);
         } else if (!tier) {
-          console.warn("[stripe:webhook] Unknown priceId; set STRIPE_*_PRICE_ID envs. priceId:", priceId);
+          console.warn(
+            "[stripe:webhook] Unknown priceId; set STRIPE_*_PRICE_ID envs. priceId:",
+            priceId
+          );
         } else {
-          console.warn("[stripe:webhook] No matching user for email:", customerEmail);
+          console.warn("[stripe:webhook] No user match for email:", customerEmail);
         }
-
         break;
       }
 
       case "customer.subscription.deleted": {
-        // When a sub is canceled, downgrade to free
         const sub = event.data.object as Stripe.Subscription;
         const customerId = sub.customer as string;
 
-        // Try profiles (preferred)
+        // Try profiles first
         const { data: prof, error: profErr } = await supabaseAdmin
           .from("profiles")
           .select("id")
           .eq("stripe_customer_id", customerId)
           .maybeSingle();
-        if (profErr) console.error("[stripe:webhook] profiles lookup error:", profErr);
+        if (profErr) console.error("[stripe:webhook] profiles lookup:", profErr);
 
         let userId = prof?.id;
 
-        // Fallback: scan app_metadata
+        // Fallback: scan users' app_metadata
         if (!userId) {
           try {
             const { data } = await supabaseAdmin.auth.admin.listUsers();
-            const u = data.users.find((u) => (u.app_metadata as any)?.stripe_customer_id === customerId);
+            const u = data.users.find(
+              (u) => (u.app_metadata as any)?.stripe_customer_id === customerId
+            );
             userId = u?.id;
           } catch (e) {
-            console.error("[stripe:webhook] admin.listUsers fallback failed:", e);
+            console.error("[stripe:webhook] listUsers fallback failed:", e);
           }
         }
 
         if (userId) {
           await setUserTierById(userId, "free", customerId);
         } else {
-          console.warn("[stripe:webhook] No user found for customerId on cancel:", customerId);
+          console.warn("[stripe:webhook] No user for canceled customer:", customerId);
         }
-
         break;
       }
 
       default:
-        // Ignore other events
+        // Ignore everything else
         break;
     }
 
