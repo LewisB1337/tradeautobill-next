@@ -5,7 +5,9 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { redirect } from 'next/navigation';
 import CreateForm from './_client';
 
+// Force this route to render on every request
 export const dynamic = 'force-dynamic';
+// (Optional) explicitly disable ISR
 export const revalidate = 0;
 
 export default async function CreatePage() {
