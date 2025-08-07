@@ -3,8 +3,15 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { createClient } from '@supabase/supabase-js';
 
 type PlanKey = 'free' | 'standard' | 'pro';
+
+// Public env for client-side use
+const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPA_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const STANDARD_LINK = process.env.NEXT_PUBLIC_STRIPE_STANDARD_LINK!;
+const PRO_LINK = process.env.NEXT_PUBLIC_STRIPE_PRO_LINK!;
 
 function PlanCard({
   title,
@@ -15,10 +22,10 @@ function PlanCard({
   cta,
 }: {
   title: string;
-  subtitle?: string;            // e.g. "Start Sending"
-  priceText: string;            // e.g. "£9/mo"
+  subtitle?: string;
+  priceText: string;
   features: string[];
-  borderColor?: string;         // e.g. "#cfe3ff" for Standard (legacy)
+  borderColor?: string;
   cta: React.ReactNode;
 }) {
   return (
@@ -31,9 +38,7 @@ function PlanCard({
       }}
     >
       <h2 style={{ marginTop: 0 }}>{title}</h2>
-      {subtitle && (
-        <div className="muted" style={{ marginTop: -6 }}>{subtitle}</div>
-      )}
+      {subtitle && <div className="muted" style={{ marginTop: -6 }}>{subtitle}</div>}
       <p className="muted" style={{ marginTop: 6 }}>{priceText}</p>
 
       <ul style={{ paddingLeft: 18, margin: '12px 0' }}>
@@ -45,19 +50,51 @@ function PlanCard({
   );
 }
 
+async function getUserEmail(): Promise<string | null> {
+  try {
+    const supa = createClient(SUPA_URL, SUPA_ANON);
+    const { data } = await supa.auth.getUser();
+    return data.user?.email ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default function PricingClient() {
   const router = useRouter();
   const params = useSearchParams();
   const coupon = params.get('coupon');
 
   async function handleUpgrade(plan: PlanKey) {
+    if (plan === 'free') {
+      router.push('/login');
+      return;
+    }
+
     try {
+      // Require sign-in before buying
       const res = await fetch('/api/session', { credentials: 'include' });
       if (res.status === 401) {
         router.push('/login');
         return;
       }
-      router.push(`/account?plan=${plan}`);
+
+      const base =
+        plan === 'standard' ? STANDARD_LINK :
+        plan === 'pro' ? PRO_LINK : '';
+
+      if (!base) {
+        alert('Payment link not configured.');
+        return;
+      }
+
+      const email = await getUserEmail();
+      const url = email
+        ? `${base}?prefilled_email=${encodeURIComponent(email)}`
+        : base;
+
+      // Hard redirect to Stripe checkout
+      window.location.assign(url);
     } catch {
       router.push('/login');
     }
@@ -71,10 +108,7 @@ export default function PricingClient() {
         </p>
       )}
 
-      <div
-        className="grid-2"
-        style={{ gridTemplateColumns: '1fr 1fr 1fr' }}
-      >
+      <div className="grid-2" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
         <PlanCard
           title="Free"
           subtitle="Start Sending"
@@ -87,11 +121,7 @@ export default function PricingClient() {
             'Watermarked',
             '14-day invoice history',
           ]}
-          cta={
-            <Link href="/login" className="btn btn-secondary">
-              Start free
-            </Link>
-          }
+          cta={<Link href="/login" className="btn btn-secondary">Start free</Link>}
         />
 
         <PlanCard
