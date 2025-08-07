@@ -2,8 +2,7 @@
 // ───────────────────────
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import UsageMeter from '../components/UsageMeter';           // ← FIXED: import declared
+import React, { useMemo, useState } from 'react';
 
 type Item = {
   id: string;
@@ -14,26 +13,6 @@ type Item = {
 };
 
 export default function CreateForm() {
-  // ── Usage ────────────────────────────────────────────────────────────────
-  const [daily, setDaily]     = useState({ used: 0, limit: 0 });
-  const [monthly, setMonthly] = useState({ used: 0, limit: 0 });
-  const [tier, setTier]       = useState<string>('Free');
-
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/usage',   { credentials: 'include' }).then(r => r.ok ? r.json() : Promise.reject()),
-      fetch('/api/invoice', { credentials: 'include' }).then(r => r.ok ? r.json() : Promise.reject())
-    ])
-      .then(([u, inv]) => {
-        setDaily({   used: u.daily_count,   limit: u.daily_limit   });
-        setMonthly({ used: u.monthly_count, limit: u.monthly_limit });
-        if (inv.user?.tier) {
-          setTier(String(inv.user.tier).replace(/^\w/, c => c.toUpperCase()));
-        }
-      })
-      .catch(() => {});   // leave defaults if fetch fails
-  }, []);
-
   // ── Form State ───────────────────────────────────────────────────────────
   const [businessName,    setBusinessName]    = useState('');
   const [businessEmail,   setBusinessEmail]   = useState('');
@@ -162,14 +141,7 @@ export default function CreateForm() {
       {/* Header */}
       <header className="row" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
         <h1 style={{ margin: 0 }}>Create invoice</h1>
-        <span className="pill">{tier}</span>
       </header>
-
-      {/* Usage meter */}
-      <section className="card" style={{ margin: '16px 0' }}>
-        <h3 style={{ marginTop: 0 }}>Usage</h3>
-        <UsageMeter daily={daily} monthly={monthly} />
-      </section>
 
       {/* Form */}
       <form id="invoiceForm"
