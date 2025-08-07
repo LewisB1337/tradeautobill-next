@@ -5,9 +5,8 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { redirect } from 'next/navigation';
 import CreateForm from './_client';
 
-// Force this route to render on every request
+// Force per-request rendering, no ISR
 export const dynamic = 'force-dynamic';
-// Explicitly disable ISR
 export const revalidate = 0;
 
 export default async function CreatePage() {
@@ -20,11 +19,8 @@ export default async function CreatePage() {
     redirect('/login?from=/create');
   }
 
-  // Fetch live usage data at request time
-  const usageRes = await fetch(
-    `${process.env.NEXT_PUBLIC_BASE_URL}/api/usage`,
-    { cache: 'no-store' }
-  );
+  // ← relative fetch; no env var needed
+  const usageRes = await fetch('/api/usage', { cache: 'no-store' });
   if (!usageRes.ok) {
     throw new Error('Failed to load usage');
   }
