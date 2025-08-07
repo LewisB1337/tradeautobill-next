@@ -2,7 +2,6 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import UsageMeter from '../components/UsageMeter';
 
 type Item = {
   id: string;
