@@ -46,40 +46,47 @@ async function getActiveSubscription(customerId: string | undefined) {
   }
 }
 
-function currentPriceIdFromSubscription(sub: Stripe.Subscription | null): string | undefined {
+function currentPriceIdFromSubscription(sub: any): string | undefined {
   if (!sub) return;
   const item = sub.items?.data?.[0];
   const price = item?.price as Stripe.Price | undefined;
   return price?.id;
 }
 
-async function getUsageCounts(supabase: ReturnType<typeof createServerClient> extends infer T ? any : never, userId: string) {
-  // Defaults if you don’t have an invoices table or RLS blocks counts
+// Safely extract renewal ISO string across API versions
+function renewalIso(sub: any): string | null {
+  const ts =
+    sub?.current_period_end ??
+    sub?.current_period?.end ??
+    null;
+  return ts ? new Date(ts * 1000).toISOString() : null;
+}
+
+async function getUsageCounts(supabase: any, userId: string) {
   const today = { count: 0 };
   const month = { count: 0 };
 
   try {
-    // If your invoices table is named differently, change here
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
 
     // Count today
-    const { count: cToday, error: e1 } = await supabase
+    const { count: cToday } = await supabase
       .from("invoices")
       .select("*", { count: "exact", head: true })
       .eq("user_id", userId)
       .gte("created_at", todayStart.toISOString());
-    if (!e1 && typeof cToday === "number") today.count = cToday;
+    if (typeof cToday === "number") today.count = cToday;
 
     // Count this month
-    const { count: cMonth, error: e2 } = await supabase
+    const { count: cMonth } = await supabase
       .from("invoices")
       .select("*", { count: "exact", head: true })
       .eq("user_id", userId)
       .gte("created_at", monthStart.toISOString());
-    if (!e2 && typeof cMonth === "number") month.count = cMonth;
+    if (typeof cMonth === "number") month.count = cMonth;
   } catch {
-    // swallow — keep defaults
+    // ignore — keep defaults
   }
 
   return { today, month };
@@ -101,9 +108,7 @@ export async function GET() {
 
     if (mapped && mapped !== "free") tier = mapped;
 
-    const renewsAt = sub?.current_period_end
-      ? new Date(sub.current_period_end * 1000).toISOString()
-      : null;
+    const renewsAt = renewalIso(sub);
 
     // Usage (best effort)
     const usage = await getUsageCounts(supabase, user.id);
