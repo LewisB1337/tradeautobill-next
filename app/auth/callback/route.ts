@@ -1,27 +1,39 @@
 // app/auth/callback/route.ts
-import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
 
-export const runtime = 'nodejs'
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const code = url.searchParams.get("code");
+  const next = url.searchParams.get("next") || "/account";
 
-export async function GET(request: Request) {
-  const url = new URL(request.url)
-  const code = url.searchParams.get('code')
-  const next = url.searchParams.get('next') || '/dashboard' // where to go after login
+  if (code) {
+    const cookieStore = cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get: (name: string) => cookieStore.get(name)?.value,
+          set: (name: string, value: string, options: any) => cookieStore.set(name, value, options),
+          remove: (name: string, options: any) => cookieStore.delete(name, options),
+        },
+      }
+    );
 
-  if (!code) {
-    // optional: show an error page instead
-    return NextResponse.redirect(new URL('/auth?error=missing_code', url.origin))
+    // Exchange the one-time code for a session and set auth cookies on this domain
+    try {
+      await supabase.auth.exchangeCodeForSession(code);
+    } catch {
+      // fall through to redirect; UI can show an error if needed
+    }
   }
 
-  const supabase = createRouteHandlerClient({ cookies })
-  // This handles the PKCE exchange server-side and sets auth cookies
-  const { error } = await supabase.auth.exchangeCodeForSession(code)
-  if (error) {
-    // surface the error so you can see it
-    return NextResponse.redirect(new URL('/auth?error=' + encodeURIComponent(error.message), url.origin))
-  }
-
-  return NextResponse.redirect(new URL(next, url.origin))
+  // Always bounce to the app (defaults to /account)
+  const dest = new URL(next, url.origin);
+  return NextResponse.redirect(dest);
 }
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";

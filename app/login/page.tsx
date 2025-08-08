@@ -16,8 +16,9 @@ export default function LoginPage() {
 
     try {
       const supabase = createClientComponentClient();
-      // Redirect to your new server-side callback
-      const redirectTo = `${window.location.origin}/auth/callback`;
+
+      const redirectTo =
+        `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/auth/callback`;
 
       const { error: err } = await supabase.auth.signInWithOtp({
         email,
@@ -25,7 +26,6 @@ export default function LoginPage() {
       });
 
       if (err) throw err;
-
       setStatus('sent');
     } catch (e: any) {
       console.error(e);
