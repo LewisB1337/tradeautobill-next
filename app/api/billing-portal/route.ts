@@ -24,9 +24,11 @@ async function getSignedInUser(): Promise<User | null> {
 async function persistStripeCustomer(userId: string, email: string | null, customerId: string) {
   const { createClient } = await import("@supabase/supabase-js");
   const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+
   await admin.auth.admin.updateUserById(userId, {
     app_metadata: { stripe_customer_id: customerId },
   });
+
   await admin.from("profiles").upsert({
     id: userId,
     email: email ?? undefined,
@@ -38,33 +40,45 @@ async function persistStripeCustomer(userId: string, email: string | null, custo
 async function ensureStripeCustomerId(user: User, stripe: Stripe): Promise<string> {
   let customerId = (user.app_metadata as any)?.stripe_customer_id as string | undefined;
 
-  // Verify stored ID works with this Stripe key (handles live/test mismatch)
+  // Verify existing ID works with this key (handles live/test mismatch)
   if (customerId) {
-    try { await stripe.customers.retrieve(customerId); return customerId; }
-    catch { customerId = undefined; }
+    try {
+      await stripe.customers.retrieve(customerId);
+      return customerId;
+    } catch {
+      customerId = undefined;
+    }
   }
 
   // Find by email
   if (!customerId && user.email) {
     try {
       const search = await stripe.customers.search({
-        query: `email:"${user.email.replace(/"/g, '\\"')}"`, limit: 1,
+        query: `email:"${user.email.replace(/"/g, '\\"')}"`,
+        limit: 1,
       });
-      if (search.data[0]?.id) customerId = search.data[0].id;
-    } catch {}
+      if (search.data[0]?.id) {
+        customerId = search.data[0].id;
+      }
+    } catch {
+      // ignore
+    }
   }
 
   // Create if none
   if (!customerId) {
     const created = await stripe.customers.create({
       email: user.email || undefined,
-      name: (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) || undefined,
+      name:
+        (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) ||
+        undefined,
       metadata: { supabase_user_id: user.id },
     });
     customerId = created.id;
   }
 
-  await persistStripeCustomer(user.id, user.email, customerId);
+  // ✅ The fix: coerce undefined → null for the function signature
+  await persistStripeCustomer(user.id, user.email ?? null, customerId);
   return customerId;
 }
 
