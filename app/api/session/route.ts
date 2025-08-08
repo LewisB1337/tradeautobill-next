@@ -1,24 +1,37 @@
-// app/api/session/route.ts
-import { NextResponse } from 'next/server'
-import type { Database } from '@/types_db'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+import { NextResponse } from "next/server";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
-// GET  ― return the current user (or 401)
+function supaFromCookies() {
+  const jar = cookies();
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return jar.getAll(); },
+        setAll(list: { name: string; value: string; options: CookieOptions }[]) {
+          for (const { name, value, options } of list) jar.set(name, value, options);
+        },
+      },
+    }
+  );
+}
+
 export async function GET() {
-  const supabase = createRouteHandlerClient<Database>({ cookies })
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ user: null }, { status: 401 })
+  try {
+    const supabase = supaFromCookies();
+    const { data: { user } } = await supabase.auth.getUser();
+    return NextResponse.json({
+      ok: true,
+      signedIn: !!user,
+      email: user?.email ?? null,
+      app_metadata: user?.app_metadata ?? null,
+    });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
   }
-
-  return NextResponse.json({ user })
 }
 
-// POST  ― sign out (optional helper)
-export async function POST() {
-  const supabase = createRouteHandlerClient<Database>({ cookies })
-  await supabase.auth.signOut()
-  return NextResponse.json({ success: true })
-}
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
