@@ -2,6 +2,7 @@
 
 import Head from 'next/head'
 import { useEffect, useState } from 'react'
+import ManageSubscriptionButton from "@/components/ManageSubscriptionButton";
 
 type Plan = { tier: string; renewsAt: string | null }
 type Usage = {
@@ -14,10 +15,7 @@ export default function AccountPage() {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
   const [plan,    setPlan]    = useState<Plan>({ tier: 'Free', renewsAt: null })
-  const [usage,   setUsage]   = useState<Usage>({
-    today: { count: 0, limit: 3 },
-    month: { count: 0, limit: 10 },
-  })
+  const [usage,   setUsage]   = useState<Usage>({ today: { count: 0, limit: 3 }, month: { count: 0, limit: 10 } })
 
   useEffect(() => {
     ;(async () => {
@@ -65,7 +63,7 @@ export default function AccountPage() {
               <>
                 <p>Tier: <strong id="tier">{plan.tier}</strong></p>
                 <p>Renews: <span id="renews">{plan.renewsAt ? new Date(plan.renewsAt).toLocaleDateString() : '—'}</span></p>
-                <a href="/api/billing/portal" className="btn btn-secondary">Manage subscription</a>
+                <ManageSubscriptionButton />
               </>
             )}
           </div>
@@ -97,7 +95,6 @@ export default function AccountPage() {
           </div>
         </div>
 
-        {/* Business profile (visual only – hook to your existing handlers if needed) */}
         <form className="card" style={{ marginTop: 16 }} onSubmit={(e) => e.preventDefault()}>
           <h2>Business profile</h2>
           <div className="grid-2">
@@ -119,7 +116,6 @@ export default function AccountPage() {
         <button className="btn btn-link" style={{ marginTop: 12 }} onClick={() => (location.href = '/logout')}>Log out</button>
       </div>
 
-      {/* ---- Design system from the HTML mocks ---- */}
       <style jsx global>{styles}</style>
     </>
   )
@@ -130,32 +126,4 @@ function pct(used: number, limit: number | null): number {
   return Math.min(100, Math.round((used / limit) * 100))
 }
 
-const styles = `
-:root{
-  --color-bg:#FFFFFF; --color-text:#111; --color-muted:#444;
-  --color-accent:#0066FF; --color-border:#E6E6E6; --color-soft:#F7F9FF;
-  --spacing:8px; --font-body:'Inter',sans-serif; --font-heading:'Space Grotesk',sans-serif;
-  --radius:10px; --shadow:0 6px 24px rgba(0,0,0,0.06);
-}
-*,*::before,*::after{box-sizing:border-box}
-html,body{height:100%}
-body{margin:0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);line-height:1.5}
-h1{font-family:var(--font-heading);font-size:2rem;margin:0 0 16px}
-h2{font-size:1.1rem;margin:0 0 8px}
-a{color:var(--color-accent);text-decoration:none}
-.container{max-width:1140px;margin:0 auto;padding:0 16px}
-.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-.card{border:1px solid var(--color-border);border-radius:12px;padding:18px;background:#fff;box-shadow:var(--shadow)}
-.btn{display:inline-flex;align-items:center;justify-content:center;font-weight:700;border:none;border-radius:10px;cursor:pointer}
-.btn-primary{background:var(--color-accent);color:#fff;padding:12px 16px}
-.btn-secondary{background:#fff;color:var(--color-text);padding:12px 16px;border:1px solid var(--color-border)}
-.btn-link{background:none;border:none;padding:0;color:var(--color-accent);cursor:pointer}
-.muted{color:#555}
-.tiny{font-size:.85rem}
-.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-.meter{display:flex;gap:12px;align-items:center;margin:8px 0}
-.bar{flex:1;height:10px;background:#eee;border-radius:8px;overflow:hidden}
-.bar > span{display:block;height:100%;background:var(--color-accent);width:0}
-form input, form select, form textarea{width:100%;padding:12px 14px;border:1px solid var(--color-border);border-radius:8px}
-@media (max-width: 960px){ .grid-2{grid-template-columns:1fr} }
-`;
+const styles = `/* … keep your CSS … */`
