@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import Stripe from "stripe";
 
 type Tier = "free" | "standard" | "pro";
+
 const PRICE_TO_TIER: Record<string, Tier> = {
   [process.env.STRIPE_STANDARD_PRICE_ID!]: "standard",
   [process.env.STRIPE_PRO_PRICE_ID!]: "pro",
 };
+
 const LIMITS: Record<Tier, { today: number | null; month: number | null }> = {
   free: { today: 3, month: 10 },
   standard: { today: 50, month: 1000 },
@@ -24,23 +26,26 @@ function getStripe() {
   return new Stripe(key);
 }
 
-async function getUserAndClient() {
-  const cookieStore = cookies();
-  const supabase = createServerClient(
+function supaFromCookies() {
+  const jar = cookies();
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { get: n => cookieStore.get(n)?.value, set: () => {}, remove: () => {} } }
+    {
+      cookies: {
+        getAll() { return jar.getAll(); },
+        setAll(list: { name: string; value: string; options: CookieOptions }[]) {
+          for (const { name, value, options } of list) jar.set(name, value, options);
+        },
+      },
+    },
   );
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw new Error(`supabase.auth.getUser failed: ${error.message}`);
-  return { user: data.user, supabase };
 }
 
 function renewalIso(sub: any): string | null {
   const ts = sub?.current_period_end ?? sub?.current_period?.end ?? null;
   return ts ? new Date(ts * 1000).toISOString() : null;
 }
-
 function currentPriceId(sub: any): string | undefined {
   const item = sub?.items?.data?.[0];
   const price = item?.price as Stripe.Price | undefined;
@@ -53,30 +58,28 @@ export async function GET(req: Request) {
 
   try {
     // 1) Auth
-    let user, supabase;
+    let user: any;
     try {
-      const u = await getUserAndClient();
-      user = u.user; supabase = u.supabase;
+      const supabase = supaFromCookies();
+      const { data, error } = await supabase.auth.getUser();
+      if (error) return json(401, { ok: false, step: "auth", error: error.message });
+      user = data.user;
+      if (!user) return json(401, { ok: false, step: "auth", error: "Not signed in" });
     } catch (e: any) {
-      const msg = e?.message || String(e);
-      return json(500, { ok: false, step: "auth", error: msg });
+      return json(500, { ok: false, step: "auth", error: e?.message || String(e) });
     }
-    if (!user) return json(401, { ok: false, step: "auth", error: "Not signed in" });
 
-    // 2) Base tier from app_metadata, fallback free
+    // 2) Tier base
     let tier: Tier = ((user.app_metadata as any)?.tier as Tier) || "free";
-    const stripeCustomerId = (user.app_metadata as any)?.stripe_customer_id as string | undefined;
+    const customerId = (user.app_metadata as any)?.stripe_customer_id as string | undefined;
 
-    // 3) Stripe subscription (best-effort; never hard-fail this route)
+    // 3) Subscription (soft-fail)
     let sub: any = null;
     try {
-      if (stripeCustomerId) {
+      if (customerId) {
         const stripe = getStripe();
         const list = await stripe.subscriptions.list({
-          customer: stripeCustomerId,
-          status: "all",
-          expand: ["data.items.data.price"],
-          limit: 1,
+          customer: customerId, status: "all", expand: ["data.items.data.price"], limit: 1,
         });
         sub = list.data[0] ?? null;
       } else {
@@ -84,22 +87,20 @@ export async function GET(req: Request) {
       }
     } catch (e: any) {
       notes.push(`stripe_error:${e?.message || e}`);
-      sub = null;
     }
 
-    // 4) Map price -> tier if present
     const priceId = currentPriceId(sub);
     const mapped = priceId ? PRICE_TO_TIER[priceId] : undefined;
     if (mapped && mapped !== "free") tier = mapped;
 
     const renewsAt = renewalIso(sub);
 
-    // 5) Usage counts (soft-fail)
+    // 4) Usage (soft-fail)
+    const supabase = supaFromCookies();
     const usage = { today: { count: 0 }, month: { count: 0 } };
     try {
-      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-      const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
-
+      const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+      const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
       const { count: cToday } = await supabase
         .from("invoices")
         .select("*", { count: "exact", head: true })
@@ -120,10 +121,7 @@ export async function GET(req: Request) {
     const limits = LIMITS[tier];
     const body: any = {
       ok: true,
-      plan: {
-        tier: tier.charAt(0).toUpperCase() + tier.slice(1),
-        renewsAt,
-      },
+      plan: { tier: tier[0].toUpperCase() + tier.slice(1), renewsAt },
       usage: {
         today: { count: usage.today.count, limit: limits.today },
         month: { count: usage.month.count, limit: limits.month },
