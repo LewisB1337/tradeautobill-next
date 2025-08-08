@@ -1,3 +1,22 @@
 [build]
 command = "npm run build"
 publish = ".next"
+
+# Force apex domain. This stops cookies getting stranded on netlify.app hosts.
+[[redirects]]
+  from = "/*"
+  to = "https://tradeautobill.com/:splat"
+  status = 301
+  force = true
+  conditions = { Host = [
+    "incomparable-tulumba-7feb45.netlify.app",
+    "main--incomparable-tulumba-7feb45.netlify.app"
+  ]}
+
+# Also force www -> apex (belt-and-braces)
+[[redirects]]
+  from = "/*"
+  to = "https://tradeautobill.com/:splat"
+  status = 301
+  force = true
+  conditions = { Host = ["www.tradeautobill.com"] }
