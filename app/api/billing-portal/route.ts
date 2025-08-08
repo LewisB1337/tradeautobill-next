@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import Stripe from "stripe";
+import type { User } from "@supabase/supabase-js";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+function getStripe(): Stripe {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("Missing STRIPE_SECRET_KEY");
+  return new Stripe(key);
+}
 
-// lazy-attach a Stripe customer so portal works even pre-payment
-async function getSignedInUser() {
+async function getSignedInUser(): Promise<User | null> {
   const cookieStore = cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,21 +18,43 @@ async function getSignedInUser() {
     { cookies: { get: n => cookieStore.get(n)?.value, set: () => {}, remove: () => {} } }
   );
   const { data: { user } } = await supabase.auth.getUser();
-  return user;
+  return user ?? null;
 }
 
-async function ensureStripeCustomerId(user: any): Promise<string> {
+async function persistStripeCustomer(userId: string, email: string | null, customerId: string) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  await admin.auth.admin.updateUserById(userId, {
+    app_metadata: { stripe_customer_id: customerId },
+  });
+  await admin.from("profiles").upsert({
+    id: userId,
+    email: email ?? undefined,
+    stripe_customer_id: customerId,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+async function ensureStripeCustomerId(user: User, stripe: Stripe): Promise<string> {
   let customerId = (user.app_metadata as any)?.stripe_customer_id as string | undefined;
 
-  if (!customerId && user.email) {
-    try {
-      const search = await stripe.customers.search({ query: `email:"${user.email.replace(/"/g, '\\"')}"`, limit: 1 });
-      if (search.data[0]?.id) customerId = search.data[0].id;
-    } catch (e) {
-      console.error("[billing-portal] customers.search failed", e);
-    }
+  // Verify stored ID works with this Stripe key (handles live/test mismatch)
+  if (customerId) {
+    try { await stripe.customers.retrieve(customerId); return customerId; }
+    catch { customerId = undefined; }
   }
 
+  // Find by email
+  if (!customerId && user.email) {
+    try {
+      const search = await stripe.customers.search({
+        query: `email:"${user.email.replace(/"/g, '\\"')}"`, limit: 1,
+      });
+      if (search.data[0]?.id) customerId = search.data[0].id;
+    } catch {}
+  }
+
+  // Create if none
   if (!customerId) {
     const created = await stripe.customers.create({
       email: user.email || undefined,
@@ -38,46 +64,38 @@ async function ensureStripeCustomerId(user: any): Promise<string> {
     customerId = created.id;
   }
 
-  // persist to Supabase
-  const { createClient } = await import("@supabase/supabase-js");
-  const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-  await admin.auth.admin.updateUserById(user.id, {
-    app_metadata: { ...(user.app_metadata || {}), stripe_customer_id: customerId },
-  });
-  await admin.from("profiles").upsert({
-    id: user.id,
-    email: user.email,
-    stripe_customer_id: customerId,
-  });
-
+  await persistStripeCustomer(user.id, user.email, customerId);
   return customerId;
 }
 
-async function handleOpen() {
-  const user = await getSignedInUser();
-  if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+async function handle(req: Request) {
+  try {
+    const user = await getSignedInUser();
+    if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  const customerId = await ensureStripeCustomerId(user);
-  const returnUrl = `${process.env.NEXT_PUBLIC_SITE_URL || "https://tradeautobill.com"}/account`;
+    const stripe = getStripe();
+    const customerId = await ensureStripeCustomerId(user, stripe);
 
-  const session = await stripe.billingPortal.sessions.create({
-    customer: customerId,
-    return_url: returnUrl,
-  });
+    const origin = new URL(req.url).origin;
+    const returnUrl = `${process.env.NEXT_PUBLIC_SITE_URL || origin}/account`;
 
-  return NextResponse.json({ url: session.url });
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: returnUrl,
+    });
+
+    return NextResponse.json({ url: session.url });
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message || "Portal failed" }, { status: 500 });
+  }
 }
 
-export async function POST() {
-  return handleOpen();
-}
-
-// Let you hit it in the browser directly while signed in
-export async function GET() {
-  const res = await handleOpen();
+export async function POST(req: Request) { return handle(req); }
+export async function GET(req: Request) {
+  const res = await handle(req);
   try {
     const data = await res.json();
-    if ((res as any).status === 200 && data?.url) return NextResponse.redirect(data.url);
+    if (res.status === 200 && data?.url) return NextResponse.redirect(data.url);
   } catch {}
   return res;
 }
