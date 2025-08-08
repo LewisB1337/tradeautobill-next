@@ -1,132 +1,130 @@
-// app/api/account/route.ts
-import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import Stripe from "stripe";
 
-export const runtime = 'nodejs'
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
-// Per-tier limits
-const PLAN_LIMITS: Record<string, { daily: number | null; monthly: number | null }> = {
-  Free:    { daily: 3,  monthly: 10 },
-  Starter: { daily: 20, monthly: 500 },
-  Pro:     { daily: 50, monthly: 1000 },
-  Business:{ daily: null, monthly: null }, // unlimited
+// Map Stripe Price IDs -> your app tiers
+const PRICE_TO_TIER: Record<string, "free" | "standard" | "pro"> = {
+  [process.env.STRIPE_STANDARD_PRICE_ID!]: "standard",
+  [process.env.STRIPE_PRO_PRICE_ID!]: "pro",
+};
+
+type Tier = "free" | "standard" | "pro";
+
+const LIMITS: Record<Tier, { today: number | null; month: number | null }> = {
+  free: { today: 3, month: 10 },
+  standard: { today: 50, month: 1000 },
+  pro: { today: null, month: null }, // unlimited
+};
+
+async function getUser() {
+  const cookieStore = cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { get: n => cookieStore.get(n)?.value, set: () => {}, remove: () => {} } }
+  );
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  return { user, supabase };
 }
 
-function startOfUTCDay(d = new Date())   { return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0,0,0,0)) }
-function startOfUTCMonth(d = new Date()) { return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0,0,0,0)) }
+async function getActiveSubscription(customerId: string | undefined) {
+  if (!customerId) return null;
+  try {
+    const subs = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      expand: ["data.items.data.price"],
+      limit: 1,
+    });
+    return subs.data[0] ?? null;
+  } catch {
+    return null;
+  }
+}
 
-function mapToTier(input?: string | null): string | null {
-  if (!input) return null
-  const s = input.toLowerCase()
-  if (s.includes('business')) return 'Business'
-  if (s.includes('pro'))      return 'Pro'
-  if (s.includes('starter'))  return 'Starter'
-  if (s.includes('basic'))    return 'Starter'
-  if (s.includes('free'))     return 'Free'
-  if (s.includes('standard')) return 'Starter'
-  return null
+function currentPriceIdFromSubscription(sub: Stripe.Subscription | null): string | undefined {
+  if (!sub) return;
+  const item = sub.items?.data?.[0];
+  const price = item?.price as Stripe.Price | undefined;
+  return price?.id;
+}
+
+async function getUsageCounts(supabase: ReturnType<typeof createServerClient> extends infer T ? any : never, userId: string) {
+  // Defaults if you don’t have an invoices table or RLS blocks counts
+  const today = { count: 0 };
+  const month = { count: 0 };
+
+  try {
+    // If your invoices table is named differently, change here
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+
+    // Count today
+    const { count: cToday, error: e1 } = await supabase
+      .from("invoices")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .gte("created_at", todayStart.toISOString());
+    if (!e1 && typeof cToday === "number") today.count = cToday;
+
+    // Count this month
+    const { count: cMonth, error: e2 } = await supabase
+      .from("invoices")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .gte("created_at", monthStart.toISOString());
+    if (!e2 && typeof cMonth === "number") month.count = cMonth;
+  } catch {
+    // swallow — keep defaults
+  }
+
+  return { today, month };
 }
 
 export async function GET() {
   try {
-    const sb = createRouteHandlerClient({ cookies })
-    const { data: { user }, error: authErr } = await sb.auth.getUser()
-    if (authErr) return NextResponse.json({ ok: false, error: authErr.message }, { status: 500 })
-    if (!user)   return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+    const { user, supabase } = await getUser();
+    if (!user) return NextResponse.json({ ok: false, error: "Not signed in" }, { status: 401 });
 
-    // ---- 1) profiles.tier (ONLY) ----
-    let tier: string | null = null
-    let renewsAt: string | null = null
+    // Base tier from app metadata
+    let tier: Tier = ((user.app_metadata as any)?.tier as Tier) || "free";
+    const stripeCustomerId = (user.app_metadata as any)?.stripe_customer_id as string | undefined;
 
-    const { data: profile, error: pErr } = await sb
-      .from('profiles')
-      .select('tier')                // do NOT select renews_at (it doesn't exist)
-      .eq('id', user.id)
-      .maybeSingle()
+    // Pull subscription (for renewal date + authoritative tier if present)
+    const sub = await getActiveSubscription(stripeCustomerId);
+    const priceId = currentPriceIdFromSubscription(sub);
+    const mapped = priceId ? PRICE_TO_TIER[priceId] : undefined;
 
-    if (pErr && pErr.code !== 'PGRST116') {
-      // ignore "no rows" type errors; only bail on real errors
-      return NextResponse.json({ ok: false, error: pErr.message }, { status: 500 })
-    }
-    if (profile?.tier) tier = profile.tier
+    if (mapped && mapped !== "free") tier = mapped;
 
-    // ---- 2) If no explicit tier, infer from Stripe subscription → price → product ----
-    if (!tier) {
-      const { data: sub } = await sb
-        .from('subscriptions')
-        .select('status, current_period_end, price_id')
-        .eq('user_id', user.id)
-        .in('status', ['active', 'trialing'])
-        .order('current_period_end', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+    const renewsAt = sub?.current_period_end
+      ? new Date(sub.current_period_end * 1000).toISOString()
+      : null;
 
-      if (sub) {
-        renewsAt = sub.current_period_end ?? null
+    // Usage (best effort)
+    const usage = await getUsageCounts(supabase, user.id);
+    const limits = LIMITS[tier];
 
-        let lookup_key: string | null = null
-        let nickname:   string | null = null
-        let product_id: string | null = null
-
-        if (sub.price_id) {
-          const { data: price } = await sb
-            .from('prices')
-            .select('lookup_key, nickname, product_id')
-            .eq('id', sub.price_id)
-            .maybeSingle()
-
-          lookup_key = price?.lookup_key ?? null
-          nickname   = price?.nickname ?? null
-          product_id = price?.product_id ?? null
-        }
-
-        let product_name: string | null = null
-        if (product_id) {
-          const { data: product } = await sb
-            .from('products')
-            .select('name')
-            .eq('id', product_id)
-            .maybeSingle()
-          product_name = product?.name ?? null
-        }
-
-        tier =
-          mapToTier(lookup_key) ||
-          mapToTier(nickname)   ||
-          mapToTier(product_name) ||
-          'Pro' // active sub but unknown naming → treat as Pro
-      }
-    }
-
-    if (!tier) tier = 'Free'
-
-    // ---- 3) Usage (UTC) ----
-    const todayStart = startOfUTCDay()
-    const monthStart = startOfUTCMonth()
-
-    const { count: countToday,  error: ctErr } = await sb
-      .from('invoices')
-      .select('id', { head: true, count: 'exact' })
-      .eq('user_id', user.id)
-      .gte('created_at', todayStart.toISOString())
-    if (ctErr) return NextResponse.json({ ok: false, error: ctErr.message }, { status: 500 })
-
-    const { count: countMonth, error: cmErr } = await sb
-      .from('invoices')
-      .select('id', { head: true, count: 'exact' })
-      .eq('user_id', user.id)
-      .gte('created_at', monthStart.toISOString())
-    if (cmErr) return NextResponse.json({ ok: false, error: cmErr.message }, { status: 500 })
-
-    const limits = PLAN_LIMITS[tier] ?? PLAN_LIMITS.Free
-    const usage = {
-      today: { count: countToday ?? 0,  limit: limits.daily },
-      month: { count: countMonth ?? 0,  limit: limits.monthly },
-    }
-
-    return NextResponse.json({ ok: true, plan: { tier, renewsAt }, usage })
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 })
+    return NextResponse.json({
+      ok: true,
+      plan: {
+        tier: tier.charAt(0).toUpperCase() + tier.slice(1), // "Pro" for UI
+        renewsAt,
+      },
+      usage: {
+        today: { count: usage.today.count, limit: limits.today },
+        month: { count: usage.month.count, limit: limits.month },
+      },
+    });
+  } catch (err: any) {
+    console.error("[/api/account] error:", err?.message || err);
+    return NextResponse.json({ ok: false, error: "Server error" }, { status: 500 });
   }
 }
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
