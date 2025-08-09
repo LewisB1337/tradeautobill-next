@@ -1,88 +1,78 @@
-'use client';
+'use client'
 
-import { useEffect, useMemo, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
+import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
-  const params = useSearchParams();
+  const [email, setEmail] = useState('')
+  const [status, setStatus] = useState<'idle'|'sending'|'sent'|'error'>('idle')
+  const [err, setErr] = useState<string|null>(null)
+  const router = useRouter()
 
-  const supabase = useMemo(
-    () => createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    ),
-    []
-  );
+  const supabase = useMemo(() => createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  ), [])
 
-  // If already logged in, bounce to dashboard
+  // 1) If URL hash contains tokens (magic link), set session then bounce
   useEffect(() => {
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) router.replace('/dashboard');
-    })();
-  }, [supabase, router]);
+      const hash = window.location.hash // e.g. #access_token=...&refresh_token=...
+      if (!hash) return
+      const params = new URLSearchParams(hash.slice(1))
+      const access_token = params.get('access_token')
+      const refresh_token = params.get('refresh_token')
+      if (!access_token || !refresh_token) return
 
-  // If a magic link lands here with ?code=..., middleware-less flow still works
-  useEffect(() => {
-    if (params.get('code')) {
-      const t = setTimeout(() => router.replace('/dashboard'), 300);
-      return () => clearTimeout(t);
-    }
-  }, [params, router]);
+      const { error } = await supabase.auth.setSession({ access_token, refresh_token })
+      if (error) {
+        setErr(error.message)
+        return
+      }
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setStatus('sending');
-    setError(null);
+      // 2) Tell the server to set auth cookies for route handlers & RSC
+      await fetch('/auth/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'SIGNED_IN' }),
+        credentials: 'include',
+      })
+
+      router.replace('/dashboard')
+    })()
+  }, [supabase, router])
+
+  // Magic-link sender
+  async function sendMagicLink(e: React.FormEvent) {
+    e.preventDefault()
+    setStatus('sending'); setErr(null)
     try {
-      const redirect = `${location.origin}/auth/callback`; // server-side exchange
-      const { error: err } = await supabase.auth.signInWithOtp({
+      const redirect = `${process.env.NEXT_PUBLIC_SITE_URL ?? location.origin}/login`
+      const { error } = await supabase.auth.signInWithOtp({
         email,
         options: { emailRedirectTo: redirect },
-      });
-      if (err) throw err;
-      setStatus('sent');
+      })
+      if (error) throw error
+      setStatus('sent')
     } catch (e: any) {
-      console.error(e);
-      setError(e?.message ?? 'Failed to send magic link');
-      setStatus('error');
+      setErr(e?.message ?? 'Failed to send link')
+      setStatus('error')
     }
   }
 
   return (
     <main className="container py-10 max-w-md">
-      <h1 style={{ marginTop: 0 }}>Sign in</h1>
-      <p className="muted small">No passwords. We’ll email you a one-time link.</p>
-
-      <form onSubmit={onSubmit} className="card" style={{ marginTop: 12 }}>
-        <div style={{ display: 'grid', gap: 12 }}>
-          <label htmlFor="email" className="tiny muted">Email</label>
-          <input
-            id="email"
-            type="email"
-            placeholder="you@company.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={status === 'sending' || !email}
-          >
-            {status === 'sending' ? 'Sending…' : 'Send magic link'}
-          </button>
-
-          {status === 'sent' && <div style={{ color: 'green' }}>Check your email for the sign-in link.</div>}
-          {status === 'error' && error && <div style={{ color: 'crimson' }}>{error}</div>}
-        </div>
+      <h1>Sign in</h1>
+      <form onSubmit={sendMagicLink} className="card" style={{ marginTop: 12 }}>
+        <input type="email" required placeholder="you@company.com"
+               value={email} onChange={(e)=>setEmail(e.target.value)} />
+        <button className="btn" disabled={status==='sending' || !email}>
+          {status==='sending' ? 'Sending…' : 'Send magic link'}
+        </button>
+        {status==='sent' && <div style={{color:'green'}}>Check your email.</div>}
+        {err && <div style={{color:'crimson'}}>Error: {err}</div>}
       </form>
     </main>
-  );
+  )
 }

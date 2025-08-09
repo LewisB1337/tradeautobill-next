@@ -1,31 +1,31 @@
-import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-export async function GET(request: Request) {
+export async function POST(req: Request) {
+  // Called from client after supabase.auth.setSession()
   try {
-    const url = new URL(request.url);
-    const code = url.searchParams.get('code');
-
-    if (!code) {
-      return NextResponse.redirect(new URL('/login?error=missing_code', request.url));
-    }
-
-    const supabase = createRouteHandlerClient({ cookies });
-
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) {
-      console.error('Auth callback error:', error);
-      return NextResponse.redirect(new URL('/login?error=auth_failed', request.url));
-    }
-
-    // ✅ Logged in, go to dashboard
-    return NextResponse.redirect(new URL('/dashboard', request.url));
-  } catch (err: any) {
-    console.error('Auth callback fatal:', err);
-    return NextResponse.redirect(new URL('/login?error=server_error', request.url));
+    const supabase = createRouteHandlerClient({ cookies })
+    // getSession() forces the helper to read client session and set cookies
+    await supabase.auth.getSession()
+    return NextResponse.json({ ok: true })
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? 'server' }, { status: 500 })
   }
+}
+
+// Optional: keep GET handler for OAuth providers that return ?code=
+export async function GET(request: Request) {
+  const url = new URL(request.url)
+  const code = url.searchParams.get('code')
+  if (code) {
+    const supabase = createRouteHandlerClient({ cookies })
+    await supabase.auth.exchangeCodeForSession(code)
+    return NextResponse.redirect(new URL('/dashboard', request.url), { status: 303 })
+  }
+  // If someone hits GET without a code, send them to login
+  return NextResponse.redirect(new URL('/login', request.url), { status: 303 })
 }
