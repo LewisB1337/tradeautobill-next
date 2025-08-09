@@ -15,10 +15,9 @@ export default function LoginPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   ), [])
 
-  // 1) If URL hash contains tokens (magic link), set session then bounce
   useEffect(() => {
     (async () => {
-      const hash = window.location.hash // e.g. #access_token=...&refresh_token=...
+      const hash = window.location.hash
       if (!hash) return
       const params = new URLSearchParams(hash.slice(1))
       const access_token = params.get('access_token')
@@ -26,29 +25,32 @@ export default function LoginPage() {
       if (!access_token || !refresh_token) return
 
       const { error } = await supabase.auth.setSession({ access_token, refresh_token })
-      if (error) {
-        setErr(error.message)
+      if (error) { setErr(error.message); return }
+
+      // ✅ Tell server to set auth cookies
+      const r = await fetch('/auth/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ access_token, refresh_token }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}))
+        setErr(j?.error || `Cookie sync failed (${r.status})`)
         return
       }
 
-      // 2) Tell the server to set auth cookies for route handlers & RSC
-      await fetch('/auth/callback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event: 'SIGNED_IN' }),
-        credentials: 'include',
-      })
-
+      // Clean ugly hash then bounce
+      history.replaceState(null, '', window.location.pathname)
       router.replace('/dashboard')
     })()
   }, [supabase, router])
 
-  // Magic-link sender
   async function sendMagicLink(e: React.FormEvent) {
     e.preventDefault()
     setStatus('sending'); setErr(null)
     try {
-      const redirect = `${process.env.NEXT_PUBLIC_SITE_URL ?? location.origin}/login`
+      const redirect = `${process.env.NEXT_PUBLIC_SITE_URL}/login`
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: { emailRedirectTo: redirect },
