@@ -1,14 +1,12 @@
-'use client';
+// app/components/Header.tsx
+import Link from 'next/link'
+import { cookies } from 'next/headers'
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-
-export default function Header() {
-  const path = usePathname();
-
-  const isActive = (href: string) => path === href;
-  const linkClass = (href: string) =>
-    `btn${isActive(href) ? ' btn-active' : ''}`;
+export default async function Header() {
+  const supabase = createServerComponentClient({ cookies })
+  const { data: { session } } = await supabase.auth.getSession()
+  const loggedIn = !!session
 
   return (
     <nav className="nav container py-4" aria-label="Main navigation">
@@ -18,22 +16,19 @@ export default function Header() {
         </Link>
       </div>
       <div className="row" style={{ gap: '0.5rem' }}>
-        <Link href="/" className={linkClass('/')}>
-          Home
-        </Link>
-        <Link href="/pricing" className={linkClass('/pricing')}>
-          Pricing
-        </Link>
-        <Link href="/create" className={linkClass('/create')}>
-          Create Invoice
-        </Link>
-        <Link href="/dashboard" className={linkClass('/dashboard')}>
-          Dashboard
-        </Link>
-        <Link href="/account" className={linkClass('/account')}>
-          Account
-        </Link>
+        <Link href="/" className="btn">Home</Link>
+        <Link href="/pricing" className="btn">Pricing</Link>
+        {loggedIn && <Link href="/create" className="btn">Create Invoice</Link>}
+        {loggedIn && <Link href="/dashboard" className="btn">Dashboard</Link>}
+        {loggedIn && <Link href="/account" className="btn">Account</Link>}
+        {!loggedIn ? (
+          <Link href="/login" className="btn">Login</Link>
+        ) : (
+          <form action="/auth/signout" method="post">
+            <button className="btn" type="submit">Logout</button>
+          </form>
+        )}
       </div>
     </nav>
-  );
+  )
 }
