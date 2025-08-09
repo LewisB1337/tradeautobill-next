@@ -11,21 +11,21 @@ export default async function Header() {
   return (
     <nav className="nav container py-4" aria-label="Main navigation">
       <div className="logo">
-        <Link href="/" className="btn btn-logo">
-          Tradeautobill
-        </Link>
+        <Link href="/" className="btn btn-logo">Tradeautobill</Link>
       </div>
       <div className="row" style={{ gap: '0.5rem' }}>
         <Link href="/" className="btn">Home</Link>
         <Link href="/pricing" className="btn">Pricing</Link>
+
         {loggedIn && <Link href="/create" className="btn">Create Invoice</Link>}
         {loggedIn && <Link href="/dashboard" className="btn">Dashboard</Link>}
         {loggedIn && <Link href="/account" className="btn">Account</Link>}
+
         {!loggedIn ? (
           <Link href="/login" className="btn">Login</Link>
         ) : (
           <form action="/auth/signout" method="post">
-            <button className="btn" type="submit">Logout</button>
+            <button type="submit" className="btn">Logout</button>
           </form>
         )}
       </div>
