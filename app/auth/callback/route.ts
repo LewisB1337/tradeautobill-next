@@ -1,45 +1,17 @@
 // app/auth/callback/route.ts
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const code = url.searchParams.get("code");
-  const next = url.searchParams.get("next") || "/account";
+export const runtime = 'nodejs'
 
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url)
+  const code = url.searchParams.get('code')
   if (code) {
-    const cookieStore = cookies();
-
-    // NEW cookie API: getAll / setAll
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-            for (const { name, value, options } of cookiesToSet) {
-              // next/headers cookies().set(name, value, options)
-              cookieStore.set(name, value, options);
-            }
-          },
-        },
-      }
-    );
-
-    try {
-      // Exchange Supabase "code" for a session; sets auth cookies via setAll above
-      await supabase.auth.exchangeCodeForSession(code);
-    } catch {
-      // ignore; we still redirect below
-    }
+    const supabase = createRouteHandlerClient({ cookies })
+    await supabase.auth.exchangeCodeForSession(code)
   }
-
-  return NextResponse.redirect(new URL(next, url.origin));
+  url.pathname = '/dashboard'; url.search = ''
+  return NextResponse.redirect(url, { status: 303 })
 }
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
